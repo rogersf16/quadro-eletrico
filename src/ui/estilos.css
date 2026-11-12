@@ -149,7 +149,8 @@ input[type='checkbox'] { width: auto; }
 .react-flow__node.selected .entrada,
 .react-flow__node.selected .carga,
 .react-flow__node.selected .emenda,
-.react-flow__node.selected .barramento-barra { outline: 3px solid var(--sel); outline-offset: 2px; }
+.react-flow__node.selected .barramento-barra,
+.react-flow__node.selected .barramento-barra-v { outline: 3px solid var(--sel); outline-offset: 2px; }
 
 /* Bornes (handles) */
 .react-flow__handle.borne {
@@ -170,6 +171,20 @@ input[type='checkbox'] { width: auto; }
 .borne-rotulo.rotulo-topo { bottom: 14px; }
 .borne-rotulo.rotulo-base { top: 14px; }
 .disp-circuito .borne-rotulo, .disp-geral .borne-rotulo { display: none; }
+
+/* Medidor DIN: corpo cinza-escuro com display LCD */
+.disp-medidor .disp-corpo { background: linear-gradient(180deg, #c3c8cf 0 20px, #3a3f47 20px, #2c3037 calc(100% - 20px), #b3b9c1 calc(100% - 20px)); border-color: #2a2e34; }
+.disp-medidor .disp-marca { color: #c9ced6; }
+.disp-medidor .disp-face { padding: 22px 4px; }
+.lcd { width: 100%; flex: 1; margin: 4px 0; border-radius: 3px; background: #4b5a4a; color: #20281f; font: 700 0.56rem/1.25 ui-monospace, Menlo, Consolas, monospace; padding: 3px 4px; display: flex; flex-direction: column; justify-content: center; box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.5); overflow: hidden; }
+.lcd-on { background: #a9d39a; }
+.lcd-linha { display: flex; justify-content: space-between; gap: 4px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.lcd-total { border-top: 1px solid rgb(0 0 0 / 0.25); margin-top: 1px; padding-top: 1px; }
+.lcd-alerta { color: #a01a10; }
+.lcd-apagado { justify-content: center; color: #7f8c7e; }
+.janela-medidor { background: #555c66; }
+.tabela-medidor { width: 100%; border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.tabela-medidor th, .tabela-medidor td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--borda); }
 
 /* Disjuntor / DR */
 /* Etiqueta na LATERAL do corpo: os cabos entram por cima e saem por baixo, então do lado nenhum cabo passa. */
@@ -248,6 +263,13 @@ input[type='checkbox'] { width: auto; }
 .barramento-barra { height: 22px; border-radius: 4px; background: linear-gradient(180deg, #e7c66f, #b38b2a); border: 1px solid #8a6a1c; border-left: 8px solid var(--cor-barra); }
 .barramento-neutro { --cor-barra: #4fa3e0; }
 .barramento-terra { --cor-barra: #2e9e4f; }
+/* Barramento vertical: barra em pé, nome do lado oposto aos furos */
+.barramento-v { display: flex; flex-direction: row; align-items: stretch; gap: 6px; user-select: none; }
+.barramento-v.vertical-esq { flex-direction: row-reverse; }
+.barramento-v .barramento-nome { width: 64px; align-self: center; margin: 0; overflow-wrap: anywhere; }
+.barramento-barra-v { position: relative; width: 22px; height: auto; background: linear-gradient(90deg, #e7c66f, #b38b2a); border-left: 1px solid #8a6a1c; border-top: 8px solid var(--cor-barra); }
+.barramento-barra-v > .react-flow__handle-right { right: 11px; }
+.barramento-barra-v > .react-flow__handle-left { left: 11px; }
 .barramento-nome { font-size: 0.68rem; text-align: center; margin-bottom: 4px; color: var(--texto); }
 
 /* Carga */

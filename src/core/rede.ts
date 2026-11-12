@@ -39,7 +39,8 @@ export function bornesDaPeca(peca: Peca, p: Projeto): Borne[] {
         ...distribuir(n.map((k) => ({ id: `out:${k}`, rotulo: k, sugestao: 'fase' as const })), 'base'),
       ];
     }
-    case 'dr': {
+    case 'dr':
+    case 'medidor': {
       const n = polosDR(peca.polos);
       const sug = (k: string) => (k === 'N' ? ('neutro' as const) : ('fase' as const));
       return [
@@ -57,8 +58,8 @@ export function bornesDaPeca(peca: Peca, p: Projeto): Borne[] {
     case 'barramento':
       return distribuir(
         Array.from({ length: peca.bornes }, (_, i) => ({ id: `b:${i + 1}`, rotulo: String(i + 1), sugestao: peca.condutor })),
-        // Furos embaixo: o barramento fica no alto do mapa e distribui neutro/terra pra baixo, como as fases.
-        'base',
+        // Horizontal: furos embaixo, distribui neutro/terra pra baixo como as fases. Vertical: furos na lateral.
+        peca.orientacao === 'vertical-dir' ? 'dir' : peca.orientacao === 'vertical-esq' ? 'esq' : 'base',
       );
     case 'carga': {
       const ids = cargaFaseFase(peca, p)
@@ -72,7 +73,7 @@ export function bornesDaPeca(peca: Peca, p: Projeto): Borne[] {
 // Pares de bornes que viram o mesmo ponto quando o dispositivo está FECHADO (ligado).
 function contatos(peca: Peca): [string, string][] {
   if (peca.tipo === 'disjuntor') return Array.from({ length: peca.polos }, (_, i) => [`in:${i + 1}`, `out:${i + 1}`]);
-  if (peca.tipo === 'dr') return polosDR(peca.polos).map((k) => [`in:${k}`, `out:${k}`]);
+  if (peca.tipo === 'dr' || peca.tipo === 'medidor') return polosDR(peca.polos).map((k) => [`in:${k}`, `out:${k}`]);
   return [];
 }
 
@@ -128,7 +129,8 @@ export function montarRede(p: Projeto, op: OpcoesRede): Rede {
     for (const b of bornesDaPeca(peca, p)) achar(chave(peca.id, b.id));
     const sempre = unidosSempre(peca, p);
     for (let i = 1; i < sempre.length; i++) unir(chave(peca.id, sempre[0]), chave(peca.id, sempre[i]));
-    if (peca.id !== op.abrir && op.fechado(peca)) {
+    // O medidor não tem chave: está sempre fechado.
+    if (peca.id !== op.abrir && (peca.tipo === 'medidor' || op.fechado(peca))) {
       for (const [a, b] of contatos(peca)) unir(chave(peca.id, a), chave(peca.id, b));
     }
   }

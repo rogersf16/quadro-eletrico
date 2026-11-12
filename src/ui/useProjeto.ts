@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CORES_CONDUTOR, fasesDoFornecimento, fornecimentoInfo } from '../core/catalogo';
 import { organizar } from '../core/layout';
 import {
-  novaCarga, novaEmenda, novoBarramento, novoCabo, novoDR, novoDisjuntor, projetoVazio,
+  novaCarga, novaEmenda, novoBarramento, novoCabo, novoDR, novoDisjuntor, novoMedidor, projetoVazio,
 } from '../core/projeto';
 import { borneInfo, limparCabos } from '../core/rede';
 import { aplicarProtecoes, cabosDoCircuito } from '../core/simulacao';
@@ -14,7 +14,7 @@ export interface Evento {
   msg: string;
 }
 
-export type TipoNovaPeca = 'disjuntor' | 'dr' | 'carga' | 'emenda' | 'barramento-neutro' | 'barramento-terra';
+export type TipoNovaPeca = 'disjuntor' | 'dr' | 'medidor' | 'carga' | 'emenda' | 'barramento-neutro' | 'barramento-terra';
 
 let contadorEventos = 0;
 
@@ -93,6 +93,7 @@ export function useProjeto() {
       const peca: Peca =
         tipo === 'disjuntor' ? novoDisjuntor(pos, { nome: `Circuito ${n('disjuntor')}` })
         : tipo === 'dr' ? novoDR(pos, { nome: `DR ${n('dr')}`, polos: info.fases > 1 ? 4 : 2 })
+        : tipo === 'medidor' ? novoMedidor(pos, { nome: `Medidor ${n('medidor')}`, polos: info.fases > 1 ? 4 : 2 })
         : tipo === 'carga' ? novaCarga(pos, 'tomada', { tensao: info.faseNeutro })
         : tipo === 'emenda' ? novaEmenda(pos, { nome: `Emenda ${n('emenda')}` })
         : novoBarramento(pos, tipo === 'barramento-terra' ? { nome: 'Barramento terra', condutor: 'terra' } : {});

@@ -222,6 +222,7 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
           <span className="grupo-rotulo">Adicionar:</span>
           <button onClick={() => adicionar('disjuntor')}>Disjuntor</button>
           <button onClick={() => adicionar('dr')}>DR</button>
+          <button onClick={() => adicionar('medidor')} title="Medidor de energia DIN: mostra tensão e corrente, não protege">Medidor</button>
           <button onClick={() => adicionar('carga')}>Carga</button>
           <button onClick={() => adicionar('emenda')}>Emenda</button>
           <button onClick={() => adicionar('barramento-neutro')}>Barra N</button>

@@ -2,9 +2,9 @@
 // arrastar de um borne até outro cria um cabo.
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { CORES_CONDUTOR, fornecimentoInfo, tipoCargaInfo } from '../../core/catalogo';
-import { MODULO, tamanhoPeca } from '../../core/layout';
+import { MODULO, barramentoVertical, tamanhoPeca } from '../../core/layout';
 import { bornesDaPeca, rotuloPotencial, type Borne, type Lado } from '../../core/rede';
-import type { Fase, Peca, PecaBarramento, PecaCarga, PecaDR, PecaDisjuntor, PecaEmenda, PecaEntrada } from '../../core/types';
+import type { Fase, Peca, PecaBarramento, PecaCarga, PecaDR, PecaDisjuntor, PecaEmenda, PecaEntrada, PecaMedidor } from '../../core/types';
 import { SeletorFornecimento } from '../components/SeletorFornecimento';
 import { useMapa } from './contexto';
 
@@ -30,7 +30,7 @@ function BorneHandle({ peca, b, mostrarRotulo = true }: { peca: string; b: Borne
   const pt = sim.rede.potencial(peca, b.id);
   const cls = pt.fases.size ? 'pot-fase' : pt.neutro ? 'pot-neutro' : pt.terra ? 'pot-terra' : '';
   const horizontal = b.lado === 'esq' || b.lado === 'dir';
-  const style = horizontal ? { top: '50%' } : { left: `${b.fracao * 100}%` };
+  const style = horizontal ? { top: `${b.fracao * 100}%` } : { left: `${b.fracao * 100}%` };
   return (
     <Handle
       id={b.id}
@@ -123,6 +123,57 @@ export function NoDR({ id }: NodeProps) {
   return p ? <Chave peca={p} /> : null;
 }
 
+// ---------- Medidor de energia (formato DIN, sem chave) ----------
+const fmtV = (v: number) => `${v} V`;
+const fmtKW = (w: number) => (w >= 1000 ? `${(w / 1000).toFixed(2).replace('.', ',')} kW` : `${Math.round(w)} W`);
+
+export function NoMedidor({ id }: NodeProps) {
+  const { sim } = useMapa();
+  const p = usePeca<PecaMedidor>(id);
+  if (!p) return null;
+  const leitura = sim.medidores[id];
+  const vivo = !!leitura?.fases.some((f) => f.fase);
+  const acima = !!leitura?.fases.some((f) => f.corrente > p.correnteMax);
+  return (
+    <div className={`disp disp-medidor ${vivo ? 'energizado' : ''}`}>
+      <div className="disp-corpo" style={{ width: p.polos * MODULO }}>
+        <Bornes peca={p} lados={['topo']} />
+        <div className="disp-face">
+          <div className="disp-marca">MEDIDOR</div>
+          <div className={`lcd ${vivo ? 'lcd-on' : ''}`} title="Leitura instantânea de tensão e corrente">
+            {vivo ? (
+              <>
+                {leitura!.fases.map((f) => (
+                  <div key={f.polo} className={`lcd-linha ${f.corrente > p.correnteMax ? 'lcd-alerta' : ''}`}>
+                    <span>{f.fase ?? '-'}</span>
+                    <span>{f.fase ? fmtV(f.tensao) : '---'}</span>
+                    <span>{f.fase ? fmtA(f.corrente) : '---'}</span>
+                  </div>
+                ))}
+                <div className="lcd-linha lcd-total">
+                  <span>P</span>
+                  <span>{fmtKW(leitura!.potencia)}</span>
+                </div>
+              </>
+            ) : (
+              <div className="lcd-linha lcd-apagado">sem energia</div>
+            )}
+          </div>
+          <div className="disp-linha">
+            <span className="janela janela-medidor">{p.correnteMax}A máx</span>
+          </div>
+        </div>
+        <Bornes peca={p} lados={['base']} />
+        {acima && <span className="sintoma-flag" title="Corrente acima do limite de medição">!</span>}
+      </div>
+      <div className="disp-etiqueta">
+        <span className="disp-nome">{p.nome}</span>
+        <span className={`disp-info ${vivo ? 'vivo' : ''}`}>{vivo ? `⚡ ${fmtKW(leitura!.potencia)}` : 'sem energia'}</span>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Entrada da rua ----------
 export function NoEntrada({ id }: NodeProps) {
   const { projeto, acoes } = useMapa();
@@ -185,6 +236,16 @@ export function NoEmenda({ id }: NodeProps) {
 export function NoBarramento({ id }: NodeProps) {
   const p = usePeca<PecaBarramento>(id);
   if (!p) return null;
+  if (barramentoVertical(p)) {
+    return (
+      <div className={`barramento-v barramento-${p.condutor} ${p.orientacao}`} style={{ height: tamanhoPeca(p).h }}>
+        <span className="barramento-nome">{p.nome}</span>
+        <div className="barramento-barra barramento-barra-v">
+          <Bornes peca={p} lados={['esq', 'dir']} rotulos={false} />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={`barramento barramento-${p.condutor}`} style={{ width: tamanhoPeca(p).w }}>
       <span className="barramento-nome">{p.nome}</span>
@@ -223,6 +284,7 @@ export const tiposDeNo = {
   entrada: NoEntrada,
   disjuntor: NoDisjuntor,
   dr: NoDR,
+  medidor: NoMedidor,
   emenda: NoEmenda,
   barramento: NoBarramento,
   carga: NoCarga,

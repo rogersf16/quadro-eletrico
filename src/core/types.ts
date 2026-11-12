@@ -68,6 +68,14 @@ export interface PecaDR extends PecaBase, Manobra {
   polos: 2 | 4; // 2 = 1 fase + N; 4 = até 3 fases + N
 }
 
+// Medidor de energia em trilho DIN (multimedidor): tem a cara de um disjuntor, mas não protege nem manobra.
+// Fica sempre fechado e só mede a tensão e a corrente de cada fase que passa por ele.
+export interface PecaMedidor extends PecaBase {
+  tipo: 'medidor';
+  polos: 2 | 4; // 2 = 1 fase + N; 4 = até 3 fases + N
+  correnteMax: number; // A: limite de medição direta
+}
+
 // Emenda cobre com cobre: todos os cabos ligados nela viram um ponto só.
 export interface PecaEmenda extends PecaBase {
   tipo: 'emenda';
@@ -78,7 +86,11 @@ export interface PecaBarramento extends PecaBase {
   tipo: 'barramento';
   condutor: 'neutro' | 'terra';
   bornes: number;
+  // Ausente = horizontal (furos embaixo). Vertical: furos do lado direito ou esquerdo.
+  orientacao?: OrientacaoBarramento;
 }
+
+export type OrientacaoBarramento = 'horizontal' | 'vertical-dir' | 'vertical-esq';
 
 // Ponto de consumo: o aparelho ou conjunto de aparelhos de um circuito.
 export interface PecaCarga extends PecaBase {
@@ -88,7 +100,7 @@ export interface PecaCarga extends PecaBase {
   tensao: 127 | 220;
 }
 
-export type Peca = PecaEntrada | PecaDisjuntor | PecaDR | PecaEmenda | PecaBarramento | PecaCarga;
+export type Peca = PecaEntrada | PecaDisjuntor | PecaDR | PecaMedidor | PecaEmenda | PecaBarramento | PecaCarga;
 export type TipoPeca = Peca['tipo'];
 
 // Uma ponta de cabo: peça + borne (ex.: { peca: 'geral', borne: 'out:1' }).

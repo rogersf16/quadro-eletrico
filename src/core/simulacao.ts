@@ -1,7 +1,7 @@
 // Simulação: quem tem energia, quanto cada carga e cada disjuntor puxa, curtos e atuação das proteções.
 import { fornecimentoInfo } from './catalogo';
 import { bornesDaPeca, cargaFaseFase, chave, estaFechado, montarRede, rotuloPotencial, type Rede } from './rede';
-import type { Cabo, Fase, Peca, PecaCarga, PecaDisjuntor, PecaDR, Projeto } from './types';
+import type { Cabo, Fase, Peca, PecaCarga, PecaDisjuntor, PecaDR, PecaMedidor, Projeto } from './types';
 
 export interface EstadoCarga {
   funciona: boolean;
@@ -25,6 +25,13 @@ export interface Simulacao {
   // Disjuntores e DRs: corrente que passa (pior polo) e o que tem energia.
   dispositivos: Record<string, { corrente: number; entrada: boolean; saida: boolean }>;
   cabos: Record<string, 'fase' | 'neutro' | 'terra' | null>; // potencial em cada cabo
+  medidores: Record<string, LeituraMedidor>;
+}
+
+// O que o display de um medidor mostra.
+export interface LeituraMedidor {
+  fases: { polo: string; fase: Fase | null; tensao: number; corrente: number }[];
+  potencia: number; // W, soma das cargas funcionando depois dele
 }
 
 const fasesOf = (rede: Rede, peca: string, borne: string) => [...rede.potencial(peca, borne).fases];
@@ -49,7 +56,7 @@ function estadoCarga(c: PecaCarga, p: Projeto, rede: Rede): EstadoCarga {
 }
 
 // Grupos de saída de um disjuntor/DR quando ele está ABERTO = tudo que depende dele.
-export function gruposJusante(p: Projeto, d: PecaDisjuntor | PecaDR, base: Omit<Parameters<typeof montarRede>[1], 'abrir'>) {
+export function gruposJusante(p: Projeto, d: PecaDisjuntor | PecaDR | PecaMedidor, base: Omit<Parameters<typeof montarRede>[1], 'abrir'>) {
   const rede = montarRede(p, { ...base, abrir: d.id });
   const saidas = bornesDaPeca(d, p).filter((b) => b.lado === 'base');
   const porPolo = saidas.map((b) => ({ borne: b.id, grupo: rede.grupo(d.id, b.id) }));
@@ -60,6 +67,8 @@ export function gruposJusante(p: Projeto, d: PecaDisjuntor | PecaDR, base: Omit<
   });
   return { rede, porPolo: proprios };
 }
+
+const polosFase = (m: PecaMedidor) => (m.polos === 2 ? ['1'] : ['1', '2', '3']);
 
 export function simular(p: Projeto, faltando?: Fase[], fechado: (x: Peca) => boolean = estaFechado): Simulacao {
   const entrada = p.pecas.find((x) => x.tipo === 'entrada');
@@ -108,13 +117,40 @@ export function simular(p: Projeto, faltando?: Fase[], fechado: (x: Peca) => boo
     dispositivos[x.id] = { corrente, entrada: entradaViva, saida: saidaViva };
   }
 
+  const medidores: Simulacao['medidores'] = {};
+  const vFN = fornecimentoInfo(p.fornecimento).faseNeutro;
+  for (const x of p.pecas) {
+    if (x.tipo !== 'medidor') continue;
+    const { rede: r2, porPolo } = gruposJusante(p, x, base);
+    const jusante = new Set(porPolo.map((k) => k.grupo));
+    const temNeutro = rede.potencial(x.id, 'in:N').neutro;
+    const fases = polosFase(x).map((polo) => {
+      const fs = fasesOf(rede, x.id, `in:${polo}`);
+      const fase = fs.length === 1 ? fs[0] : null;
+      const g = porPolo.find((k) => k.borne === `out:${polo}`)?.grupo;
+      let corrente = 0;
+      for (const c of p.pecas) {
+        if (c.tipo !== 'carga' || !cargas[c.id]?.funciona || g === undefined) continue;
+        const pontas = cargaFaseFase(c, p) ? ['L1', 'L2'] : ['L1'];
+        if (pontas.some((b) => r2.grupo(c.id, b) === g)) corrente += cargas[c.id].corrente;
+      }
+      return { polo, fase, tensao: fase && temNeutro ? vFN : 0, corrente };
+    });
+    let potencia = 0;
+    for (const c of p.pecas) {
+      if (c.tipo !== 'carga' || !cargas[c.id]?.funciona) continue;
+      if (['L1', 'L2'].some((b) => jusante.has(r2.grupo(c.id, b)))) potencia += c.potencia;
+    }
+    medidores[x.id] = { fases, potencia };
+  }
+
   const cabos: Simulacao['cabos'] = {};
   for (const c of p.cabos) {
     const pt = rede.potencial(c.de.peca, c.de.borne);
     cabos[c.id] = pt.fases.size ? 'fase' : pt.neutro ? 'neutro' : pt.terra ? 'terra' : null;
   }
 
-  return { rede, cargas, curtos, neutroNoTerra, correntePorFase, dispositivos, cabos };
+  return { rede, cargas, curtos, neutroNoTerra, correntePorFase, dispositivos, cabos, medidores };
 }
 
 // Pior caso: tudo ligado, nenhuma fase faltando.

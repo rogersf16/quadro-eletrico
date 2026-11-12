@@ -1,5 +1,7 @@
 // Tamanho das peças no mapa e organização automática em camadas.
-import type { Peca, Posicao, Projeto } from './types';
+import type { Peca, PecaBarramento, Posicao, Projeto } from './types';
+
+export const barramentoVertical = (b: PecaBarramento) => b.orientacao === 'vertical-dir' || b.orientacao === 'vertical-esq';
 
 export const MODULO = 56; // largura de 1 polo (px)
 export const GRADE = 8;
@@ -13,11 +15,14 @@ export function tamanhoPeca(p: Peca): { w: number; h: number } {
     case 'disjuntor':
       return { w: p.polos * MODULO + ETIQUETA, h: 150 };
     case 'dr':
+    case 'medidor':
       return { w: p.polos * MODULO + ETIQUETA, h: 150 };
     case 'emenda':
       return { w: 104, h: 40 };
     case 'barramento':
-      return { w: Math.max(120, p.bornes * 26 + 24), h: 58 };
+      return barramentoVertical(p)
+        ? { w: 92, h: Math.max(120, p.bornes * 26 + 24) }
+        : { w: Math.max(120, p.bornes * 26 + 24), h: 58 };
     case 'carga':
       return { w: 156, h: 104 };
   }

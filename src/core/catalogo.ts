@@ -6,6 +6,9 @@ export const CORRENTES = [2, 4, 6, 10, 13, 16, 20, 25, 32, 40, 50, 63, 70, 80, 1
 // Correntes nominais comerciais de DR (interruptor diferencial).
 export const CORRENTES_DR = [25, 40, 63, 80, 100];
 
+// Limites de medição direta comuns de multimedidores DIN.
+export const CORRENTES_MEDIDOR = [40, 63, 80, 100];
+
 export const CURVAS: { valor: Curva; desc: string }[] = [
   { valor: 'B', desc: 'B: cargas resistivas (iluminação, chuveiro)' },
   { valor: 'C', desc: 'C: uso geral, motores pequenos, ar-condicionado' },

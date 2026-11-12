@@ -35,6 +35,7 @@ Aplicação web (PWA em construção) para **montar, visualizar, simular e diagn
 | **Entrada da rua** (padrão/medidor) | Caixa escura com seletor de fornecimento e bornes coloridos A/B/C/N na base | Escolher 1 fase 127 V / 1 fase 220 V / 2 fases / 3 fases. **Clicar num borne de fase corta ou religa aquela fase** (simula falta de fase da concessionária). |
 | **Disjuntor geral** | Disjuntor DIN com alavanca vermelha | Alavanca liga/desliga. Configurado no painel lateral "Instalação". |
 | **DR** (interruptor diferencial) | Disjuntor DIN azulado, alavanca azul, botão **T** amarelo | Alavanca liga/desliga. **T** simula o botão de teste (o DR desarma). |
+| **Medidor de energia** (multimedidor DIN) | Corpo DIN escuro com display LCD verde | Não tem alavanca: fica sempre passando energia. O display mostra tensão e corrente de cada fase e a potência total do que está ligado depois dele (ex.: o CPD). Avisa com "!" se a corrente passar do limite de medição. **Não protege nada**: o circuito continua precisando de disjuntor. |
 | **Disjuntor de circuito** | Disjuntor DIN com rótulo `C20`, `B32`… e bitola no topo | Alavanca liga/desliga. LED de status (verde/amarelo/vermelho) e "!" se houver sintoma relatado. |
 
 Detalhes visuais de cada disjuntor:

@@ -1,8 +1,8 @@
 // Editores das peças mais simples: DR, carga, emenda, barramento e entrada.
 import type { ReactNode } from 'react';
-import { CORRENTES_DR, TIPOS_CARGA, fornecimentoInfo, tipoCargaInfo } from '../../core/catalogo';
+import { CORRENTES_DR, CORRENTES_MEDIDOR, TIPOS_CARGA, fornecimentoInfo, tipoCargaInfo } from '../../core/catalogo';
 import { simular, simularPiorCaso } from '../../core/simulacao';
-import type { Peca, PecaBarramento, PecaCarga, PecaDR, PecaEmenda, PecaEntrada, Projeto, TipoCarga } from '../../core/types';
+import type { Peca, PecaBarramento, PecaCarga, PecaDR, PecaEmenda, PecaEntrada, PecaMedidor, OrientacaoBarramento, Projeto, TipoCarga } from '../../core/types';
 import { drsQueProtegem, piorNivel, validarCarga } from '../../core/validacao';
 import { Campo, Selo } from '../components/Campo';
 import type { Selecao } from '../mapa/contexto';
@@ -34,6 +34,62 @@ function Rodape<T extends Peca>({ peca, acoes, onSelecionar, rotulo }: Props<T> 
         <button className="perigo" onClick={() => { acoes.removerPecas([peca.id]); onSelecionar(null); }}>{rotulo}</button>
       </div>
     </>
+  );
+}
+
+export function EditorMedidor(props: Props<PecaMedidor>) {
+  const { peca: m, projeto: p, acoes, onSelecionar } = props;
+  const mudar = (x: Partial<PecaMedidor>) => acoes.atualizarPeca(m.id, x);
+  const leitura = simular(p).medidores[m.id];
+  const fmt = (n: number) => n.toFixed(1).replace('.', ',');
+  return (
+    <section className="painel editor">
+      <Topo titulo={m.nome} extra={<span className="selo">Medidor</span>} onFechar={() => onSelecionar(null)} />
+      <p className="campo-dica">
+        Multimedidor em trilho DIN: tem o formato de um disjuntor, mas <b>não protege nem desliga nada</b>. Fica sempre
+        passando energia e mostra a tensão e a corrente de cada fase do que está ligado depois dele (ex.: o CPD).
+      </p>
+      <Campo rotulo="Nome">
+        <input value={m.nome} onChange={(e) => mudar({ nome: e.target.value })} />
+      </Campo>
+      <div className="grade">
+        <Campo rotulo="Polos">
+          <select value={m.polos} onChange={(e) => mudar({ polos: Number(e.target.value) as 2 | 4 })}>
+            <option value={2}>Monofásico (fase + N)</option>
+            <option value={4}>Trifásico (3 fases + N)</option>
+          </select>
+        </Campo>
+        <Campo rotulo="Medição direta até">
+          <select value={m.correnteMax} onChange={(e) => mudar({ correnteMax: Number(e.target.value) })}>
+            {CORRENTES_MEDIDOR.map((x) => (
+              <option key={x} value={x}>{x} A</option>
+            ))}
+          </select>
+        </Campo>
+      </div>
+      {leitura && (
+        <table className="tabela-medidor">
+          <thead>
+            <tr><th>Fase</th><th>Tensão</th><th>Corrente</th></tr>
+          </thead>
+          <tbody>
+            {leitura.fases.map((f) => (
+              <tr key={f.polo}>
+                <td>{f.fase ?? '—'}</td>
+                <td>{f.fase ? `${f.tensao} V` : '—'}</td>
+                <td>{f.fase ? `${fmt(f.corrente)} A` : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {leitura && <p className="campo-dica">Potência agora: {fmt(leitura.potencia / 1000)} kW.</p>}
+      {leitura?.fases.some((f) => f.corrente > m.correnteMax) && (
+        <p className="campo-dica"><Selo nivel="erro" /> A corrente passa do que esse medidor mede direto. Use um modelo maior ou com TC.</p>
+      )}
+      <p className="campo-dica">Lembre: ele não substitui o disjuntor. O circuito continua precisando de proteção.</p>
+      <Rodape {...props} rotulo="Remover medidor" />
+    </section>
   );
 }
 
@@ -174,6 +230,13 @@ export function EditorBarramento(props: Props<PecaBarramento>) {
           <select value={b.condutor} onChange={(e) => mudar({ condutor: e.target.value as 'neutro' | 'terra' })}>
             <option value="neutro">Neutro</option>
             <option value="terra">Terra</option>
+          </select>
+        </Campo>
+        <Campo rotulo="Posição">
+          <select value={b.orientacao ?? 'horizontal'} onChange={(e) => mudar({ orientacao: e.target.value as OrientacaoBarramento })}>
+            <option value="horizontal">Horizontal (furos embaixo)</option>
+            <option value="vertical-dir">Vertical (furos à direita)</option>
+            <option value="vertical-esq">Vertical (furos à esquerda)</option>
           </select>
         </Campo>
         <Campo rotulo="Bornes" dica="Reduzir remove os cabos dos bornes que sumirem.">
