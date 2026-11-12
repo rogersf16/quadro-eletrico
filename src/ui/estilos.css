@@ -344,3 +344,16 @@ input[type='checkbox'] { width: auto; }
   color: #fff; white-space: nowrap; font-variant-numeric: tabular-nums;
   box-shadow: 0 0 0 1.5px #fff, 0 1px 3px rgb(0 0 0 / 0.35);
 }
+
+/* Faísca ao ligar cabo energizado */
+.faisca { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; z-index: 1000; }
+.faisca-clarao { position: absolute; left: -10px; top: -10px; width: 20px; height: 20px; border-radius: 50%; background: radial-gradient(circle, #fff 0 25%, #ffe680 45%, rgb(255 190 40 / 0) 70%); animation: faisca-clarao 0.35s ease-out forwards; }
+.faisca-raio { position: absolute; left: 0; top: -1px; width: 9px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, #fff, #ffd23f); transform-origin: 0 50%; animation: faisca-raio 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) forwards; }
+.faisca-curto .faisca-clarao { left: -18px; top: -18px; width: 36px; height: 36px; background: radial-gradient(circle, #fff 0 20%, #ffb199 40%, rgb(230 60 30 / 0) 70%); }
+.faisca-curto .faisca-raio { width: 13px; height: 3px; background: linear-gradient(90deg, #fff, #ff5a2a); }
+@keyframes faisca-clarao { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+@keyframes faisca-raio {
+  from { transform: rotate(var(--a)) translateX(3px) scaleX(1); opacity: 1; }
+  to { transform: rotate(var(--a)) translateX(var(--d)) scaleX(0.3); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .faisca { display: none; } }

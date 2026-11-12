@@ -26,6 +26,7 @@ import { validarCarga, validarDisjuntor, piorNivel, type Nivel } from '../../cor
 import type { Acoes, TipoNovaPeca } from '../useProjeto';
 import { tiposDeCabo } from './CaboEdge';
 import { MapaCtx, type Selecao } from './contexto';
+import { Faiscas, type Faisca } from './Faiscas';
 import { tiposDeNo } from './nos';
 
 interface Props {
@@ -151,13 +152,37 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
     [acoes, onSelecionar],
   );
 
+  // Faíscas: centro do borne em coordenadas do mapa, a partir do que o React Flow mediu.
+  const [faiscas, setFaiscas] = useState<Faisca[]>([]);
+  const proxFaisca = useRef(0);
+  const centroBorne = (peca: string, borne: string) => {
+    const n = rf.getInternalNode(peca);
+    const h = [...(n?.internals.handleBounds?.source ?? []), ...(n?.internals.handleBounds?.target ?? [])].find((b) => b.id === borne);
+    if (!n || !h) return null;
+    return { x: n.internals.positionAbsolute.x + h.x + h.width / 2, y: n.internals.positionAbsolute.y + h.y + h.height / 2 };
+  };
+
   const onConnect = useCallback(
     (c: Connection) => {
       if (!c.sourceHandle || !c.targetHandle) return;
+      // Potencial das duas pontas ANTES de ligar: se alguma tem fase, o cabo foi ligado energizado.
+      const pa = sim.rede.potencial(c.source, c.sourceHandle);
+      const pb = sim.rede.potencial(c.target, c.targetHandle);
       const id = acoes.conectar({ peca: c.source, borne: c.sourceHandle }, { peca: c.target, borne: c.targetHandle });
-      if (id) onSelecionar({ tipo: 'cabo', id });
+      if (!id) return;
+      onSelecionar({ tipo: 'cabo', id });
+      const fases = new Set([...pa.fases, ...pb.fases]);
+      if (!fases.size) return;
+      const curto = fases.size > 1 || pa.neutro || pb.neutro || pa.terra || pb.terra;
+      // A faísca sai na ponta que "recebeu" a fase (a que estava sem fase); se as duas tinham, no destino.
+      const alvo = pb.fases.size && !pa.fases.size ? { peca: c.source, borne: c.sourceHandle } : { peca: c.target, borne: c.targetHandle };
+      const pos = centroBorne(alvo.peca, alvo.borne);
+      if (!pos) return;
+      const f: Faisca = { id: ++proxFaisca.current, ...pos, curto };
+      setFaiscas((l) => [...l, f]);
+      setTimeout(() => setFaiscas((l) => l.filter((x) => x.id !== f.id)), 700);
     },
-    [acoes, onSelecionar],
+    [acoes, onSelecionar, sim], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const adicionar = (tipo: TipoNovaPeca) => {
@@ -295,6 +320,7 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
             <Background variant={BackgroundVariant.Dots} gap={16} size={1.2} />
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable nodeStrokeWidth={2} />
+            <Faiscas lista={faiscas} />
           </ReactFlow>
         </div>
       </section>
