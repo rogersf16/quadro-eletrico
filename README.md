@@ -1,8 +1,10 @@
 # Quadro Elétrico
 
-Aplicação web (PWA em construção) para **montar, visualizar, simular e diagnosticar um quadro de distribuição elétrica residencial** no padrão brasileiro (NBR 5410, simplificada). O usuário cadastra a entrada de energia, o disjuntor geral, os DRs e os disjuntores dos circuitos. Depois liga e desliga cada peça num mapa interativo, vê por onde a energia passa, recebe alertas de dimensionamento errado e dicas de diagnóstico para defeitos reais da instalação. O projeto é salvo num arquivo `.quadro` (JSON), que pode ser reaberto ou enviado a um eletricista.
+Aplicação web para **montar, simular e diagnosticar um quadro de distribuição elétrica** no padrão brasileiro (NBR 5410, simplificada). Você monta a instalação como ela é de verdade: peças (entrada da rua, disjuntores, DRs, barramentos, cargas…) ligadas por **cabos de borne a borne**. Depois liga e desliga as peças, vê por onde a energia passa, quanto de corrente corre em cada cabo e quais proteções atuam. O app avisa sobre dimensionamento errado e dá dicas para diagnosticar defeitos reais. O projeto é salvo num arquivo `.quadro` (JSON), que pode ser reaberto ou enviado a um eletricista.
 
 > **Aviso:** é uma ferramenta de apoio e estudo. As tabelas são simplificadas e a simulação é didática. Não substitui projeto elétrico nem avaliação de um profissional habilitado.
+
+**Online:** publicado no GitHub Pages a cada `git push` na branch `main` (ver [Deploy](#deploy)).
 
 ---
 
@@ -10,242 +12,204 @@ Aplicação web (PWA em construção) para **montar, visualizar, simular e diagn
 
 | Uso | Como a aplicação ajuda |
 |---|---|
-| Mapear o quadro de casa | Cadastrar cada disjuntor com o que ele alimenta, a bitola do fio, a fase e se está atrás de DR. |
-| Conferir se está bem dimensionado | Valida a regra carga ≤ disjuntor ≤ capacidade do fio, a bitola mínima, os polos, o DR em áreas molhadas e o balanceamento de fases. |
-| Diagnosticar defeito | O usuário marca o sintoma do circuito (desarma, o DR cai, esquenta, pisca…) e recebe as causas prováveis, cruzadas com os dados cadastrados. |
-| Simular | Ligar e desligar peças, cortar uma fase da rua e ver quais circuitos ficam sem energia e quais proteções atuam. |
+| Mapear o quadro | Desenhar cada peça e cada cabo como estão ligados, com bitola, cor e anotações de "gambiarra". |
+| Conferir o dimensionamento | Valida carga ≤ disjuntor ≤ cabo, a corrente real em **cada trecho de cabo** (inclusive antes do geral), bitola mínima, DR em áreas molhadas e balanceamento de fases. |
+| Diagnosticar defeito | Marca o sintoma do circuito (desarma, o DR cai, esquenta, pisca…) e recebe as causas prováveis, cruzadas com os dados cadastrados. |
+| Simular | Ligar e desligar peças, cortar uma fase da rua, ligar um cabo energizado, fechar um curto, testar o DR e a transferência rua/gerador. |
 | Compartilhar | Exportar e importar o arquivo `.quadro`. |
 
 ---
 
 ## 2. Funcionalidades
 
-### 2.1 Mapa interativo do quadro
-- Área de trabalho grande e rolável, com fundo pontilhado. **Cada peça é arrastada livremente** (encaixa numa grade de 8 px). A posição no mapa **não precisa** corresponder à posição física no quadro: a ideia é mapear as **ligações**, não desenhar o quadro real.
-- **Zoom** de 30% a 160%: botões − / + / 100% / **Ajustar** (encaixa tudo na tela) e **Ctrl + roda do mouse**.
-- Botão **Expandir**: o mapa ocupa a largura toda e o painel lateral vai para baixo.
-- Botão **Organizar**: reposiciona tudo automaticamente em árvore (entrada → geral → DRs/circuitos → circuitos dos DRs).
-- Botões **Ligar tudo** / **Desligar tudo**.
-- Clicar no fundo do mapa limpa a seleção. Clicar numa peça, sem arrastar, a seleciona e abre o editor dela.
+### 2.1 Mapa interativo
+- Área de trabalho com zoom (roda do mouse ou botões +/−/ajustar) e minimapa. Cada peça é arrastada livremente e encaixa numa grade de 8 px. A posição no mapa **não precisa** ser a posição física: o que importa são as **ligações**.
+- **Adicionar**: Quadro, Disjuntor, DR, Medidor, Carga, Emenda, Barra N, Barra T. A peça nova nasce num **lugar livre** perto do centro da tela, sem ficar em cima de outra.
+- **Ligar tudo / Desligar tudo**, **Organizar** (layout automático com o mínimo de cruzamentos de cabos, usando ELK) e **Expandir** (mapa na largura toda).
+- **Mostrar**: filtros por condutor (fase, neutro, terra, retorno) e etiquetas de bitola em todos os cabos.
+- **Seguir o fio**: passando o mouse num cabo, todo o cobre contínuo dele fica em destaque (atravessa emendas e barramentos, para nos disjuntores). Passando numa peça, os cabos dela ganham uma plaquinha com o polo e a fase.
+- Clicar numa peça ou cabo abre o editor dele na coluna da direita. **Delete** apaga o que estiver selecionado.
 
-### 2.2 Peças do mapa
+### 2.2 Peças
 
 | Peça | Visual | Interações |
 |---|---|---|
-| **Entrada da rua** (padrão/medidor) | Caixa escura com seletor de fornecimento e bornes coloridos A/B/C/N na base | Escolher 1 fase 127 V / 1 fase 220 V / 2 fases / 3 fases. **Clicar num borne de fase corta ou religa aquela fase** (simula falta de fase da concessionária). |
-| **Disjuntor geral** | Disjuntor DIN com alavanca vermelha | Alavanca liga/desliga. Configurado no painel lateral "Instalação". |
-| **DR** (interruptor diferencial) | Disjuntor DIN azulado, alavanca azul, botão **T** amarelo | Alavanca liga/desliga. **T** simula o botão de teste (o DR desarma). |
-| **Medidor de energia** (multimedidor DIN) | Corpo DIN escuro com display LCD verde | Não tem alavanca: fica sempre passando energia. O display mostra tensão e corrente de cada fase e a potência total do que está ligado depois dele (ex.: o CPD). Avisa com "!" se a corrente passar do limite de medição. **Não protege nada**: o circuito continua precisando de disjuntor. |
-| **Disjuntor de circuito** | Disjuntor DIN com rótulo `C20`, `B32`… e bitola no topo | Alavanca liga/desliga. LED de status (verde/amarelo/vermelho) e "!" se houver sintoma relatado. |
+| **Entrada da rua** (padrão) | Caixa escura com seletor de fornecimento e bornes A/B/C/N/T | Escolher 1 fase 127 V, 1 fase 220 V, 2 fases ou 3 fases. **Clicar em A, B ou C corta ou religa a fase** (simula falta de fase da concessionária). |
+| **Disjuntor** | DIN com rótulo `C20`, `B32`…, 1P/2P/3P | Alavanca liga/desliga/rearma. Janela vermelha "I ON", verde "O OFF" ou laranja piscando "TRIP". LED de status do dimensionamento e "!" se houver sintoma. Pode ser marcado como **geral** ou como **transferência manual** (ver 2.3). |
+| **DR** | DIN azulado, botão **T** amarelo | 2P (fase + N) ou 4P (3 fases + N), 30 ou 300 mA. **T** simula o botão de teste. |
+| **Medidor de energia** (multimedidor DIN) | Corpo escuro com display LCD verde | Sem alavanca: sempre passa energia. Mostra tensão e corrente de cada fase e a potência do que está ligado depois dele (ex.: o CPD). "!" se passar do limite de medição. **Não protege nada.** |
+| **Barramento** (neutro ou terra) | Barra de latão com faixa azul ou verde | Todos os furos são o mesmo ponto elétrico. Quantidade de bornes ajustável. **Horizontal** (furos embaixo) ou **vertical** (furos à direita ou à esquerda). |
+| **Emenda** | Pequeno "⨯" | Une todos os cabos ligados nela (cobre com cobre). |
+| **Carga** | Cartão com ícone do tipo | Tipo (iluminação, tomada, chuveiro, torneira, ar, forno, motor, outro), potência e tensão. Mostra se funciona e por quê ("sem neutro", "só uma fase chegando"…). |
+| **Quadro** (caixa) | Retângulo translúcido com título | Agrupa peças visualmente (ex.: "Quadro quarto"). Nome e cor editáveis, redimensiona pelos cantos. Arrastar pelo título leva junto o que está dentro. Não entra na simulação. |
 
-Detalhes visuais de cada disjuntor:
-- Largura proporcional ao número de polos (56 px por polo). Os de 2 e 3 polos têm as alavancas unidas por uma barra.
-- Bornes com parafusos em cima (entrada) e embaixo (saída). **Brilham em laranja quando há energia.**
-- Janela de estado: **vermelha "I ON"** = ligado, **verde "O OFF"** = desligado (convenção real dos fabricantes), **laranja piscando "TRIP"** = desarmado pela proteção (alavanca fica no meio).
-- Etiqueta abaixo com número, nome, bolinhas coloridas das fases e a corrente (⚡ 18,2 A) quando energizado, ou "sem energia" / "falta fase B".
+Os bornes brilham conforme o potencial que chega neles (fase, neutro, terra).
 
-### 2.3 Fios
-- **Entrada → geral**: um fio por condutor, nas cores **A vermelho, B preto, C cinza, N azul-claro**. A fase cortada aparece tracejada e apagada.
-- **Geral/DR → DR/circuito**: curva desenhada da saída da origem até a entrada do destino. A espessura acompanha a bitola. **Quando energizado, o fio fica laranja com fluxo animado.**
-- A ligação de cada circuito é definida no editor, no campo **"Sai de"**: direto do geral ou de um DR específico.
+### 2.3 Disjuntor de transferência manual
+Opção **"Transferência manual"** no editor de qualquer disjuntor (1P, 2P ou 3P). Ele vira **dois disjuntores lado a lado com intertravamento**:
+- **Lado I** (ex.: rua) à esquerda e **lado II** (ex.: gerador) à direita, **cada um com entrada em cima e saída embaixo**. Um bipolar tem 8 bornes.
+- Cada lado tem a sua alavanca. Só um pode ficar ligado. **Se os dois forem ligados, os dois desarmam.**
+- Funciona como disjuntor normal em sobrecarga e curto. "Ligar tudo" liga só o lado I.
 
-### 2.4 Simulação de energia e proteções
-Regras de **energização** (`src/core/energia.ts`):
-1. Fases presentes = fases do fornecimento menos as cortadas na entrada.
-2. O **geral** tem energia na saída se está ligado e há pelo menos uma fase presente.
-3. Um **DR** tem energia se está ligado e a origem dele (o geral) tem energia.
-4. Um **circuito** tem energia se está ligado, a origem dele (geral ou DR) tem energia **e todas as fases que ele usa estão presentes**.
+### 2.4 Cabos
+- **Criar**: arrastar de um borne até outro. O tipo do condutor (fase, neutro, terra) e a cor vêm do borne. Cabos que saem da entrada pegam a cor da fase (A vermelho, B preto, C cinza).
+- **Editor do cabo**: bitola (1,5 a 35 mm²), função (fase, neutro, terra, retorno), cor da capa, marcação **"fora do padrão"** (gambiarra), notas, corrente passando agora × capacidade, botões Endireitar, Inverter e Remover.
+- **Caminho**: com o cabo selecionado, arrastar os **+** cria dobras. Duplo clique numa dobra a remove.
+- **Energizado**: fluxo laranja animado.
+- **Bitola insuficiente**: quando a corrente passa da capacidade do cabo, o fluxo fica **"desgovernado"** (tracejados amarelo e laranja indo e voltando aos trancos), o cabo pulsa em vermelho e mostra a etiqueta `⚠ 47 A / 41 A`.
+- **Faísca**: ligar um cabo num ponto com fase viva solta uma faísca no borne. Se a ligação fechar um curto, a faísca é maior e vermelha.
 
-Depois de qualquer manobra, as **proteções** atuam nesta ordem (`aplicarProtecoes`):
-1. **Disjuntor do circuito desarma** se estiver energizado com carga (Ib) maior que a corrente nominal (In).
-2. **DR desarma** se algum circuito energizado abaixo dele tiver o sintoma "O DR desarma". É assim que o app reproduz uma fuga relatada.
-3. **Geral desarma** se a soma das correntes energizadas em alguma fase passar da corrente do geral.
+### 2.5 Simulação
+A instalação é um **grafo**: cada borne é um ponto, e cabos, emendas, barramentos e contatos fechados (disjuntor ligado, DR ligado, medidor, lado ativo da transferência) unem pontos (union-find em `core/rede.ts`). Os potenciais (fases, neutro, terra) partem da entrada da rua.
 
-Cada atuação gera um evento, mostrado numa faixa amarela acima do mapa. Religar uma peça desarmada "rearma" e testa de novo.
+- **Cargas** funcionam se recebem o que precisam: fase + neutro (127/220 V F-N) ou duas fases diferentes (220 V F-F em bi/trifásico).
+- **Corrente** de cada disjuntor/DR: soma das cargas funcionando abaixo dele (pior polo).
+- **Corrente em cada cabo**: o cabo é retirado da rede e somam-se as cargas que perdem a fase (ou o neutro). Assim vale para qualquer trecho, do padrão até a tomada. No neutro, as correntes de fases diferentes se compensam (defasagem de 120°).
 
-### 2.5 Editor de circuito (ao selecionar um disjuntor)
-- **Dados**: nome, tipo (iluminação, tomadas, chuveiro, torneira elétrica, ar-condicionado, forno/cooktop, motor/bomba, outro), potência total (W) e tensão (127/220 V, conforme o fornecimento).
-- **Disjuntor**: corrente (2 a 125 A), polos (1P/2P/3P), curva (B/C/D) e **fases** em chips coloridos clicáveis. A quantidade de fases é exigida automaticamente: 220 V em bi/trifásico = 2 fases.
-- **Fio**: bitola de 1,5 a 35 mm² (cobre) e **"Sai de"** (geral ou DR).
-- **Números**: Ib (carga), In (disjuntor) e Iz (capacidade do fio), com a regra "carga ≤ disjuntor ≤ fio".
-- **Sugestão**: calcula o menor disjuntor comercial ≥ 1,05 × Ib e o menor fio que esse disjuntor protege, com botão **Aplicar**.
-- **Alertas** do circuito (ver 2.8).
-- **Diagnóstico**: escolher o sintoma e ler as dicas. Campo de notas livre.
+Depois de cada mudança, as **proteções** atuam até estabilizar (`aplicarProtecoes`):
+1. **Intertravamento**: os dois lados da transferência ligados → os dois desarmam.
+2. **Curto** (duas fases, ou fase com neutro/terra no mesmo ponto): cai o primeiro disjuntor do caminho (circuito antes do geral).
+3. **Sobrecarga**: corrente > nominal → desarma (circuitos antes do geral).
+4. **DR**: desarma se fase e neutro de alguma carga não passam os dois por ele (neutro misturado) ou se há o sintoma "O DR desarma" num circuito abaixo.
 
-### 2.6 Editor de DR
-Nome, corrente nominal (25/40/63/80/100 A), sensibilidade (30 mA para proteção de pessoas, 300 mA só contra incêndio), polos (2P ou 4P), lista dos circuitos protegidos (clicáveis) com a soma de corrente e o botão **"+ Circuito neste DR"**.
+### 2.6 Avisos
+- Cada desarme, curto, falta de fase ou cabo que passou a ficar sobrecarregado gera um aviso na faixa amarela acima do mapa.
+- **O aviso sai sozinho quando o problema é resolvido** (rearmou, religou a fase, engrossou o cabo, desfez o curto). Avisos informativos somem em 6 segundos. Um aviso novo sobre o mesmo problema substitui o anterior.
 
-### 2.7 Painel lateral
-- **Instalação**: nome, endereço, fases que chegam da rua (com um "Como descobrir?" explicando como identificar), disjuntor geral (corrente e polos) e se há DPS.
-- **Carga por fase**: barra com a corrente **ligada agora** sobre o **pior caso** (tudo ligado), comparada com o geral, mais os alertas gerais.
+### 2.7 Validações
+**Por disjuntor**: carga > disjuntor (erro) ou acima de 90% (aviso); disjuntor maior que o cabo mais fino depois dele (erro); bitola abaixo do mínimo (1,5 mm² iluminação, 2,5 mm² demais); neutro mais fino que a fase; motor/ar com curva B; geral com menos polos que as fases; transferência com entrada ou saída sem ligar.
 
-### 2.8 Regras de validação (`src/core/calculos.ts`)
-Por circuito:
-- Ib > In → **erro** (vai desarmar). Ib > 90% de In → **aviso**.
-- In > Iz → **erro** (o fio pode superaquecer sem o disjuntor desarmar).
-- Bitola abaixo do mínimo (1,5 mm² iluminação, 2,5 mm² demais) → **erro**.
-- Circuito precisa de mais fases do que o fornecimento tem → **erro**.
-- 220 V entre fases com disjuntor de 1 polo → **erro**.
-- Chuveiro/torneira sem DR → **erro**. Tomada sem DR → **aviso**.
-- Motor/ar-condicionado com curva B → **aviso**.
+**Por carga**: não funciona nem com tudo ligado (erro); área molhada sem DR (erro); tomada sem DR (aviso); 220 V F-F vindo de dois disjuntores diferentes (aviso); sem terra em tomada, chuveiro, ar ou forno (aviso).
 
-Gerais:
-- Soma de uma fase (pior caso) > geral → **erro**. Fases com diferença > 30% → **aviso**.
-- Geral com menos polos que as fases do fornecimento → **erro**.
-- DR sem circuitos → **aviso**. DR com corrente menor que a soma dos circuitos → **aviso**. DR bipolar alimentando circuito de 2+ fases → **erro**.
-- Sem DPS → **aviso**.
+**Gerais** (painel "Carga por fase"): curto com tudo ligado; neutro unido ao terra fora do padrão; fase acima do geral; fases desbalanceadas > 30%; DR sem carga ou acima da corrente nominal; **qualquer cabo com corrente acima da capacidade** (com a bitola mínima sugerida); emendas; cabos fora do padrão; falta de DPS.
 
-### 2.9 Diagnóstico por sintoma
+### 2.8 Editor do disjuntor
+Corrente (2 a 125 A), polos, curva, geral, transferência manual; números **Ib** (carga), **In** (disjuntor) e **Iz** (cabo) com a regra "carga ≤ disjuntor ≤ cabo"; **sugestão** de disjuntor e bitola com botão **Aplicar**; cargas alimentadas; alertas; **diagnóstico por sintoma**; notas.
+
 | Sintoma | O que o app considera |
 |---|---|
-| Disjuntor desarma com o uso | Se Ib > In: sobrecarga, dividir o circuito. Senão: aparelho não cadastrado, disjuntor fraco ou curto intermitente. |
-| Desarma ao ligar o aparelho | Curto no aparelho ou corrente de partida (sugere curva C ou D). |
-| O DR desarma | Fuga para a terra: umidade, resistência do chuveiro, isolamento, neutro misturado. Teste religando um circuito por vez. |
-| Esquenta | Se In > Iz: fio fino demais. Senão: mau contato no borne. |
+| Desarma com o uso | Se Ib > In: sobrecarga, dividir o circuito. Senão: aparelho não cadastrado, disjuntor fraco ou curto intermitente. |
+| Desarma ao ligar o aparelho | Curto no aparelho ou corrente de partida (curva C ou D). |
+| O DR desarma | Fuga para a terra: umidade, resistência do chuveiro, isolamento, neutro misturado. |
+| Esquenta | Se In > Iz: cabo fino demais. Senão: mau contato no borne. |
 | Cheiro de queimado | Parar de usar e chamar eletricista. |
 | Sem energia | Disjuntor no meio do curso, fase faltando, fio rompido, problema antes do quadro. |
 | Luz piscando | Neutro frouxo (risco de sobretensão) ou mau contato. |
 
-### 2.10 Arquivos e persistência
-- **Salvar arquivo** baixa `<nome>.quadro` (JSON indentado). **Abrir .quadro** importa e valida.
+### 2.9 Arquivos e persistência
+- **Salvar arquivo** baixa `<nome>.quadro`. **Abrir .quadro** importa, valida e **migra** arquivos de versões anteriores (1, 2 e as versões de teste da transferência).
 - **Rascunho automático** no navegador (localStorage), 400 ms depois de cada mudança.
-- Arquivos de versão antiga são **migrados** ao abrir.
 
 ---
 
-## 3. Formato do arquivo `.quadro` (versão 2)
-
-Exemplo resumido:
+## 3. Formato do arquivo `.quadro` (versão 3)
 
 ```json
 {
   "app": "quadro-eletrico",
-  "versao": 2,
+  "versao": 3,
   "nome": "Minha casa",
   "endereco": "",
   "fornecimento": "bi",
-  "entrada": { "pos": { "x": 48, "y": 24 }, "faltando": [] },
-  "geral": { "corrente": 50, "polos": 2, "ligado": true, "desarmado": false, "pos": { "x": 96, "y": 232 } },
   "dps": false,
-  "drs": [
-    { "id": "dr-1", "nome": "DR banheiro", "corrente": 40, "sensibilidade": 30, "polos": 4,
-      "origem": "geral", "ligado": true, "desarmado": false, "pos": { "x": 24, "y": 520 } }
+  "pecas": [
+    { "id": "entrada", "tipo": "entrada", "nome": "Entrada da rua", "notas": "", "pos": { "x": 40, "y": 24 }, "faltando": [] },
+    { "id": "geral", "tipo": "disjuntor", "nome": "Disjuntor geral", "notas": "", "pos": { "x": 88, "y": 232 },
+      "geral": true, "corrente": 50, "polos": 2, "curva": "C", "sintoma": "nenhum", "ligado": true, "desarmado": false }
   ],
-  "circuitos": [
-    { "id": "c-1", "nome": "Chuveiro", "tipo": "chuveiro", "potencia": 6800, "tensao": 220,
-      "disjuntor": { "corrente": 40, "polos": 2, "curva": "B" }, "bitola": 6, "fases": ["A", "B"],
-      "origem": "dr-1", "sintoma": "nenhum", "notas": "", "ligado": true, "desarmado": false,
-      "pos": { "x": 24, "y": 816 } }
+  "cabos": [
+    { "id": "c1", "de": { "peca": "entrada", "borne": "A" }, "para": { "peca": "geral", "borne": "in:1" },
+      "condutor": "fase", "cor": "#d0302a", "bitola": 10, "pontos": [], "foraDoPadrao": false, "notas": "" }
   ],
-  "atualizadoEm": "2026-11-10T18:00:00.000Z"
+  "atualizadoEm": "2026-11-12T18:00:00.000Z"
 }
 ```
 
-O que cada campo significa (JSON não aceita comentários, por isso a explicação vem aqui):
+**Raiz**: `app` (assinatura), `versao` (3), `nome`, `endereco`, `fornecimento` (`mono127` \| `mono220` \| `bi` \| `tri`), `dps`, `pecas[]`, `cabos[]`, `atualizadoEm`.
 
-**Raiz**
+**Campos comuns de toda peça**: `id`, `tipo`, `nome`, `notas`, `pos` `{x, y}`.
 
-| Campo | Tipo | Significado |
-|---|---|---|
-| `app` | `"quadro-eletrico"` | Assinatura. Arquivos sem ela são rejeitados. |
-| `versao` | `2` | Versão do formato. `1` é migrada automaticamente. |
-| `nome`, `endereco` | string | Identificação livre. |
-| `fornecimento` | `"mono127"` \| `"mono220"` \| `"bi"` \| `"tri"` | Fases da rua: 1 fase 127 V, 1 fase 220 V, 2 fases 127/220 V, 3 fases 127/220 V. |
-| `entrada.pos` | `{x,y}` | Posição da peça "Entrada da rua" no mapa (px, zoom 100%). |
-| `entrada.faltando` | `("A"\|"B"\|"C")[]` | Fases cortadas na simulação de falta de fase. |
-| `geral` | objeto | Disjuntor geral: `corrente` (A), `polos` (1–3), `ligado`, `desarmado`, `pos`. |
-| `dps` | boolean | Existe DPS (protetor de surto) no quadro. |
-| `drs` | array | DRs (ver abaixo). |
-| `circuitos` | array | Disjuntores de circuito (ver abaixo). A ordem define a numeração #1, #2… |
-| `atualizadoEm` | ISO 8601 | Data em que o arquivo foi salvo. |
-
-**DR (`drs[]`)**
-
-| Campo | Significado |
+| `tipo` | Campos próprios |
 |---|---|
-| `id` | Identificador único (UUID). |
-| `nome` | Nome livre. |
-| `corrente` | Corrente nominal em A (25, 40, 63, 80, 100). |
-| `sensibilidade` | `30` ou `300` mA. |
-| `polos` | `2` (fase + neutro) ou `4` (até 3 fases + neutro). |
-| `origem` | De onde vem a energia. Hoje é sempre `"geral"`. |
-| `ligado` / `desarmado` | Estado da alavanca. `desarmado: true` = caiu sozinho (TRIP). |
-| `pos` | Posição no mapa. |
+| `entrada` | `faltando`: fases cortadas (`"A"`, `"B"`, `"C"`). |
+| `disjuntor` | `geral`, `corrente` (A), `polos` (1–3), `curva` (B/C/D), `sintoma`, `ligado`, `desarmado`. Transferência: `transferencia: true` e `II: { ligado, desarmado }` (o lado I usa `ligado`/`desarmado` da raiz). |
+| `dr` | `corrente`, `sensibilidade` (30/300), `polos` (2/4), `ligado`, `desarmado`. |
+| `medidor` | `polos` (2/4), `correnteMax` (A). |
+| `barramento` | `condutor` (`neutro`/`terra`), `bornes`, `orientacao` (`horizontal` \| `vertical-dir` \| `vertical-esq`, opcional). |
+| `emenda` | — |
+| `carga` | `tipoCarga`, `potencia` (W), `tensao` (127/220). |
+| `quadro` | `w`, `h` (px), `cor` (hex). |
 
-**Circuito (`circuitos[]`)**
+**Bornes** (usados em `cabos[].de/para.borne`):
 
-| Campo | Significado |
+| Peça | Bornes |
 |---|---|
-| `id`, `nome` | Identificador único e nome livre. |
-| `tipo` | `iluminacao`, `tomada`, `chuveiro`, `torneira`, `ar`, `forno`, `motor`, `outro`. |
-| `potencia` | Soma das potências dos aparelhos do circuito, em W. |
-| `tensao` | `127` ou `220` V. |
-| `disjuntor.corrente` | Corrente nominal In em A. |
-| `disjuntor.polos` | `1`, `2` ou `3`. |
-| `disjuntor.curva` | `B` (resistivo), `C` (geral/motores pequenos), `D` (partida pesada). |
-| `bitola` | Seção do fio de cobre em mm² (1.5, 2.5, 4, 6, 10, 16, 25, 35). |
-| `fases` | Fases usadas: 1 para fase-neutro, 2 para 220 V entre fases, 3 para trifásico. |
-| `origem` | `"geral"` ou o `id` de um DR. É a "ligação" desenhada no mapa. |
-| `sintoma` | `nenhum`, `desarma`, `desarma_ao_ligar`, `dr_desarma`, `esquenta`, `cheiro`, `sem_energia`, `oscila`. |
-| `notas` | Texto livre (o que tem ligado, medições, quando acontece). |
-| `ligado` / `desarmado` / `pos` | Iguais aos do DR. |
+| Entrada | `A`, `B`, `C` (conforme o fornecimento), `N`, `T` |
+| Disjuntor | `in:1…n` (em cima) e `out:1…n` (embaixo). Transferência: lado II em `inII:k` e `outII:k`. |
+| DR / Medidor | `in:1`, `in:N` … e `out:1`, `out:N` … (4P: 1, 2, 3, N) |
+| Barramento | `b:1…n` |
+| Emenda | `e:t`, `e:b`, `e:l`, `e:r` |
+| Carga | `L1` + `N` (fase-neutro) ou `L1` + `L2` (220 V entre fases), e `T` |
 
-**Fórmulas e tabelas usadas**
-- Corrente do circuito: `Ib = P / V` (1 ou 2 polos). Para 3 polos: `Ib = P / (√3 × 220)`. Fator de potência considerado 1.
-- Capacidade do fio (Iz): cobre, PVC 70 °C, método B1 (eletroduto embutido), NBR 5410 tabela 36, sem fatores de agrupamento ou temperatura.
+**Cabo**: `de`/`para` (`{peca, borne}`), `condutor` (`fase`/`neutro`/`terra`/`retorno`), `cor`, `bitola` (mm²), `pontos` (dobras), `rotaAuto` (dobras do Organizar), `foraDoPadrao`, `notas`.
+
+**Tabela de capacidade dos cabos (Iz)**: cobre, PVC 70 °C, método B1 (eletroduto embutido), NBR 5410 tabela 36, sem fatores de agrupamento ou temperatura.
 
 | mm² | 1,5 | 2,5 | 4 | 6 | 10 | 16 | 25 | 35 |
 |---|---|---|---|---|---|---|---|---|
 | 2 condutores carregados (A) | 17,5 | 24 | 32 | 41 | 57 | 76 | 101 | 125 |
 | 3 condutores carregados (A) | 15,5 | 21 | 28 | 36 | 50 | 68 | 89 | 110 |
 
-- Corrente por fase: um circuito de 2 fases soma o seu Ib **em cada uma** das duas fases.
-
 ---
 
 ## 4. Arquitetura
 
-Stack: **React 18 + TypeScript + Vite 5**, sem backend obrigatório. O código é dividido em camadas para trocar a hospedagem ou o armazenamento sem mexer na interface.
+Stack: **React 18 + TypeScript + Vite 5 + React Flow (@xyflow/react) + ELK (elkjs)**, sem backend obrigatório.
 
 ```
 src/
-  core/        Regras do domínio. TypeScript puro, sem DOM: roda no navegador ou num servidor Node.
+  core/          Regras do domínio. TypeScript puro, sem DOM.
     types.ts       Tipos do projeto (formato do arquivo).
-    catalogo.ts    Catálogos: correntes, curvas, bitolas, tabela Iz, fornecimentos, tipos, sintomas, cores.
-    calculos.ts    Corrente, validações, sugestão, diagnóstico, carga por fase.
-    energia.ts     Simulação: energização e atuação das proteções.
-    layout.ts      Geometria das peças, organização automática, posição livre.
-    projeto.ts     Projeto vazio, serialização, validação e migração do arquivo.
-  storage/     Onde o projeto é guardado.
-    repositorio.ts Interface Repositorio { carregar(), salvar() }.
-    local.ts       Implementação com localStorage (padrão).
-    api.ts         Implementação HTTP (GET/PUT {VITE_API_URL}/projeto) para um servidor próprio futuro.
-    arquivo.ts     Exportar/importar .quadro no navegador.
-    index.ts       Escolhe a implementação conforme a config.
-  ui/          React. Só conversa com core/ e storage/.
-    useProjeto.ts  Estado do projeto e todas as ações (adicionar, mover, alternar, cortar fase…).
+    catalogo.ts    Correntes, curvas, bitolas, tabela Iz, fornecimentos, tipos de carga, sintomas, cores.
+    rede.ts        Bornes de cada peça e a rede elétrica (union-find): quem está no mesmo ponto.
+    simulacao.ts   Cargas, correntes, curtos, proteções, medidores e corrente em cada cabo.
+    validacao.ts   Alertas de dimensionamento, sugestão e diagnóstico por sintoma.
+    layout.ts      Tamanho das peças e organização simples em camadas.
+    layoutAuto.ts  Organização automática com ELK (carregado só quando usado).
+    migracao.ts    Conversão de arquivos versão 1 e 2 para a 3.
+    projeto.ts     Fábricas de peças, projeto vazio, serialização e leitura do arquivo.
+    testes/        Testes Vitest do núcleo (*.test.ts) e montar.ts, que monta circuitos de exemplo.
+  storage/       Onde o projeto é guardado (localStorage, API HTTP ou arquivo).
+  ui/            React. Só conversa com core/ e storage/.
+    useProjeto.ts  Estado do projeto, todas as ações e os avisos.
+    chave.ts       Chave "elétrica" do projeto (evita recalcular ao só arrastar peças).
     App.tsx        Layout geral.
-    components/    Mapa, Dispositivo (disjuntor), Entrada, editores, painel lateral, resumo.
+    components/    Cabeçalho, painel do projeto, resumo de carga, campos.
+    editores/      Editores de disjuntor, cabo e demais peças.
+    mapa/          Mapa (React Flow), nós das peças, cabos, faíscas, "seguir o fio".
     estilos.css    Estilos com tokens de cor (claro/escuro automático).
-  config.ts    Lê variáveis de ambiente (VITE_ARMAZENAMENTO, VITE_API_URL).
+  config.ts      Lê as variáveis de ambiente.
 ```
 
 Princípios:
 - Toda regra elétrica fica em `core/`. A UI não faz conta, só chama funções.
-- Toda mudança de estado passa por `useProjeto`. As manobras (ligar/desligar, cortar fase) passam por `aplicarProtecoes`.
-- Mudar o formato do arquivo exige incrementar `VERSAO_FORMATO` e escrever uma migração em `core/projeto.ts`.
+- Toda mudança de estado passa por `useProjeto`. Mudanças elétricas passam por `aplicarProtecoes`.
+- Mudar o formato do arquivo exige incrementar `VERSAO_FORMATO` e escrever a migração.
+- Mudou uma regra elétrica? Rode `npm test`. Achou um bug? Escreva primeiro um teste que reproduz o bug e só depois corrija.
 
 ---
 
 ## 5. Como rodar
 
-Requisito: Node.js (testado com v26 via nvm).
+Requisito: Node.js (testado com v26).
 
 ```bash
 npm install          # baixa as dependências listadas no package.json
 npm run dev          # servidor de desenvolvimento com recarga automática em http://localhost:5173
 npm run build        # checa os tipos (tsc --noEmit) e gera a versão final em dist/
 npm run preview      # serve a pasta dist/ localmente pra conferir a build
+npm test             # roda os testes automáticos (Vitest) uma vez
+npm run test:watch   # roda os testes de novo a cada arquivo salvo
 ```
 
 ### Configuração (`.env`, ver `.env.example`)
@@ -255,7 +219,8 @@ npm run preview      # serve a pasta dist/ localmente pra conferir a build
 | `VITE_API_URL` | ex.: `/api` | Base da API quando `VITE_ARMAZENAMENTO=api`. |
 
 ### Deploy
-- **Hospedagem estática** (Netlify, Vercel, Cloudflare Pages, GitHub Pages): rodar `npm run build` e publicar a pasta `dist/`.
+- **GitHub Pages (atual)**: o workflow `.github/workflows/deploy.yml` roda `npm ci`, `npm test` e `npm run build` e publica `dist/` a cada push na `main`. O andamento aparece na aba **Actions**. Se algum teste ou o build falhar, o site continua na versão anterior. O `vite.config.ts` usa `base: './'`, então funciona com qualquer nome de repositório.
+- **Outra hospedagem estática** (Netlify, Vercel, Cloudflare Pages): `npm run build` e publicar `dist/`.
 - **Servidor próprio com Docker**:
 
 ```bash
@@ -265,23 +230,20 @@ docker build -t quadro .
 docker run -p 8080:80 quadro
 ```
 
-O `nginx.conf` já tem um bloco comentado `location /api/` para quando existir backend.
-
 ---
 
 ## 6. Limitações conhecidas
-- A simulação é **binária** (tem ou não tem energia). Não calcula queda de tensão, curto-circuito, seletividade nem curvas de disparo por tempo.
-- O fator de potência é considerado 1 e não há fator de demanda: o "pior caso" soma tudo ligado ao mesmo tempo.
-- O DR desarma na simulação apenas pelo sintoma relatado ou pelo botão T. Fuga real não é calculada.
-- A tabela de Iz é fixa (método B1, sem fatores de correção).
-- As ligações são escolhidas no editor ("Sai de"), ainda não arrastando fios.
-- DRs sempre saem do geral (não há DR em cascata nem sub-quadros).
-- PWA (instalar e funcionar offline) ainda não configurado.
+- Uma única fonte de energia (a entrada da rua). A transferência ainda não tem um **gerador** de verdade do outro lado.
+- Sem queda de tensão, seletividade nem curvas de disparo por tempo. O fator de potência é 1 e não há fator de demanda: o "pior caso" soma tudo ligado.
+- Capacidade dos cabos com tabela fixa (método B1, 2 condutores carregados).
+- Cabos em paralelo (anel) não dividem a corrente no cálculo por cabo.
+- O DR desarma por neutro misturado, sintoma relatado ou botão T. Fuga real para a terra não é calculada.
+- Os testes cobrem só o núcleo (`src/core`): rede, simulação, proteções, validações e arquivo. A interface não tem teste automático. PWA (instalar e funcionar offline) não configurado.
 
 ## 7. Ideias de evolução
-- Criar e editar ligações arrastando fios entre bornes.
-- Sub-quadros (quadro de distribuição alimentando outro quadro).
-- Lista de aparelhos por circuito (somando a potência automaticamente) e fator de demanda.
-- Queda de tensão por comprimento do circuito.
-- Exportar PDF ou imagem do quadro para imprimir e colar na tampa.
+- Peça **Gerador** (segunda fonte) para simular rua × gerador e o erro de ligar os dois em paralelo.
+- Relatório em PDF do quadro para o eletricista ou para colar na tampa.
+- Compartilhar o projeto por link.
+- Lista de aparelhos por carga e fator de demanda.
+- Queda de tensão pelo comprimento do cabo.
 - Manifesto PWA e service worker.

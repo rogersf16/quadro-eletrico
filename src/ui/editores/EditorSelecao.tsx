@@ -3,7 +3,7 @@ import type { Selecao } from '../mapa/contexto';
 import type { Acoes } from '../useProjeto';
 import { EditorCabo } from './EditorCabo';
 import { EditorDisjuntor } from './EditorDisjuntor';
-import { EditorBarramento, EditorCarga, EditorDR, EditorEmenda, EditorEntrada, EditorMedidor } from './EditorPeca';
+import { EditorBarramento, EditorCarga, EditorDR, EditorEmenda, EditorEntrada, EditorMedidor, EditorQuadro } from './EditorPeca';
 
 interface Props {
   selecao: Selecao | null;
@@ -27,6 +27,8 @@ export function EditorSelecao({ selecao, projeto, acoes, onSelecionar }: Props) 
       return <EditorDisjuntor key={peca.id} peca={peca} {...comum} />;
     case 'dr':
       return <EditorDR key={peca.id} peca={peca} {...comum} />;
+    case 'quadro':
+      return <EditorQuadro key={peca.id} peca={peca} {...comum} />;
     case 'medidor':
       return <EditorMedidor key={peca.id} peca={peca} {...comum} />;
     case 'carga':

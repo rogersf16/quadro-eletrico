@@ -25,8 +25,8 @@ export function Resumo({ projeto }: { projeto: Projeto }) {
           <div key={f} className="barra-fase">
             <div className="barra-rotulo">
               <span>Fase {f}</span>
-              <span className="num">
-                {agora[f].toFixed(1)} A agora · {pior[f].toFixed(1)} máx{geral ? ` / ${geral} A` : ''}
+              <span className="num" title="Agora · máximo com tudo ligado / disjuntor geral">
+                {agora[f].toFixed(1).replace('.', ',')} A · máx {pior[f].toFixed(1).replace('.', ',')}{geral ? ` / ${geral} A` : ' A'}
               </span>
             </div>
             <div className="barra-trilho">

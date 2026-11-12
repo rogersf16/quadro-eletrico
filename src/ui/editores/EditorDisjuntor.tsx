@@ -41,25 +41,54 @@ export function EditorDisjuntor({ peca: d, projeto: p, acoes, onSelecionar }: Pr
             ))}
           </select>
         </Campo>
-        <Campo rotulo="Polos" dica="Diminuir polos desliga os cabos do polo removido.">
+        <Campo rotulo="Polos">
           <select value={d.polos} onChange={(e) => mudar({ polos: Number(e.target.value) as Polos })}>
-            <option value={1}>1P (monopolar)</option>
-            <option value={2}>2P (bipolar)</option>
-            <option value={3}>3P (tripolar)</option>
+            <option value={1}>1P · mono</option>
+            <option value={2}>2P · bi</option>
+            <option value={3}>3P · tri</option>
           </select>
         </Campo>
         <Campo rotulo="Curva">
           <select value={d.curva} onChange={(e) => mudar({ curva: e.target.value as Curva })}>
             {CURVAS.map((x) => (
-              <option key={x.valor} value={x.valor}>{x.desc}</option>
+              <option key={x.valor} value={x.valor}>Curva {x.valor}</option>
             ))}
           </select>
         </Campo>
       </div>
+      <p className="campo-dica">{CURVAS.find((x) => x.valor === d.curva)?.desc}. Diminuir polos remove os cabos do polo tirado.</p>
       <label className="check">
         <input type="checkbox" checked={d.geral} onChange={(e) => mudar({ geral: e.target.checked })} />
         É o disjuntor geral
       </label>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={!!d.transferencia}
+          onChange={(e) =>
+            mudar(e.target.checked ? { transferencia: true, II: { ligado: false, desarmado: false } } : { transferencia: false, II: undefined })
+          }
+        />
+        Transferência manual
+      </label>
+      {d.transferencia && (
+        <>
+          <p className="campo-dica">
+            Dois disjuntores com intertravamento: <b>I</b> (ex.: rua) à esquerda e <b>II</b> (ex.: gerador) à direita, cada um
+            com entrada em cima e saída embaixo. Só um lado liga por vez; <b>ligando os dois, os dois desarmam</b>.
+          </p>
+          <div className="acoes">
+            {(['I', 'II'] as const).map((l) => {
+              const lado = l === 'I' ? { ligado: d.ligado, desarmado: d.desarmado } : (d.II ?? { ligado: false, desarmado: false });
+              return (
+                <button key={l} onClick={() => acoes.alternarLado(d.id, l)} title={lado.desarmado ? 'Rearmar' : lado.ligado ? 'Desligar' : 'Ligar'}>
+                  {lado.desarmado ? `Rearmar ${l}` : lado.ligado ? `Desligar ${l}` : `Ligar ${l}`}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       <div className="numeros">
         <div><span className="num grande">{info.ib.toFixed(1).replace('.', ',')} A</span><span>carga (Ib)</span></div>

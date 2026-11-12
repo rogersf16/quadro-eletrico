@@ -1,7 +1,7 @@
 // Validações de dimensionamento/ligação e dicas de diagnóstico por sintoma.
 import { BITOLAS, CORRENTES, capacidadeFio, fasesDoFornecimento, tipoCargaInfo } from './catalogo';
 import { bornesDaPeca, cargaFaseFase, estaFechado } from './rede';
-import { cabosDoCircuito, gruposJusante, simularPiorCaso, type Simulacao } from './simulacao';
+import { cabosDoCircuito, correntesDosCabos, gruposJusante, msgSobrecargaCabo, simularPiorCaso, type Simulacao } from './simulacao';
 import type { Peca, PecaCarga, PecaDisjuntor, PecaDR, Projeto } from './types';
 
 export type Nivel = 'erro' | 'aviso' | 'ok';
@@ -84,6 +84,11 @@ export function validarDisjuntor(p: Projeto, d: PecaDisjuntor, pior?: Simulacao)
   if (info.bitolaNeutro !== null && info.bitolaFase !== null && info.bitolaNeutro < info.bitolaFase) {
     a.push({ nivel: 'aviso', msg: `Neutro (${mm(info.bitolaNeutro)}) mais fino que a fase (${mm(info.bitolaFase)}). Em circuito monofásico o neutro leva a mesma corrente.` });
   }
+  if (d.transferencia) {
+    const ligado = (prefixo: string) => p.cabos.some((c) => [c.de, c.para].some((k) => k.peca === d.id && k.borne.startsWith(prefixo)));
+    if (!ligado('in:') || !ligado('inII:')) a.push({ nivel: 'aviso', msg: 'Transferência: ligue as duas entradas (I em cima à esquerda, II à direita).' });
+    if (!ligado('out:') || !ligado('outII:')) a.push({ nivel: 'aviso', msg: 'Transferência: ligue as duas saídas (I e II) na mesma carga, senão um dos lados não alimenta nada.' });
+  }
   if (d.curva === 'B' && info.cargas.some((c) => c.tipoCarga === 'motor' || c.tipoCarga === 'ar')) {
     a.push({ nivel: 'aviso', msg: 'Motor/compressor com curva B pode desarmar na partida. Use curva C.' });
   }
@@ -150,6 +155,12 @@ export function validarProjeto(p: Projeto): Alerta[] {
     if (e.tipo !== 'emenda') continue;
     const n = p.cabos.filter((c) => c.de.peca === e.id || c.para.peca === e.id).length;
     if (n >= 2) a.push({ nivel: 'aviso', msg: `"${e.nome}": emenda direta com ${n} cabos. Garanta isolamento e acesso (não pode ficar dentro do eletroduto).` });
+  }
+  // Bitola de cada cabo contra a corrente real que passa nele com tudo ligado (inclusive antes do geral).
+  const cargaCabos = correntesDosCabos(p, pior, (x) => x.tipo === 'disjuntor' || x.tipo === 'dr', []);
+  for (const c of p.cabos) {
+    const k = cargaCabos[c.id];
+    if (k?.sobrecarga) a.push({ nivel: 'erro', msg: msgSobrecargaCabo(p, c, k, ' com tudo ligado') });
   }
   for (const c of p.cabos) {
     if (c.foraDoPadrao) a.push({ nivel: 'aviso', msg: `Fora do padrão: cabo ${c.condutor} ${mm(c.bitola)}${c.notas ? ` (${c.notas})` : ''}.` });

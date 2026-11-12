@@ -34,9 +34,12 @@ export function bornesDaPeca(peca: Peca, p: Projeto): Borne[] {
       );
     case 'disjuntor': {
       const n = Array.from({ length: peca.polos }, (_, i) => String(i + 1));
+      // Transferência: dois disjuntores lado a lado, cada um com entrada (em cima) e saída (embaixo) próprias.
+      // Lado I à esquerda (in:k / out:k), lado II à direita (inII:k / outII:k). Ex.: bipolar = 8 bornes.
+      const ladoII = (pre: string) => (peca.transferencia ? n.map((k) => ({ id: `${pre}II:${k}`, rotulo: k, sugestao: 'fase' as const })) : []);
       return [
-        ...distribuir(n.map((k) => ({ id: `in:${k}`, rotulo: k, sugestao: 'fase' as const })), 'topo'),
-        ...distribuir(n.map((k) => ({ id: `out:${k}`, rotulo: k, sugestao: 'fase' as const })), 'base'),
+        ...distribuir([...n.map((k) => ({ id: `in:${k}`, rotulo: k, sugestao: 'fase' as const })), ...ladoII('in')], 'topo'),
+        ...distribuir([...n.map((k) => ({ id: `out:${k}`, rotulo: k, sugestao: 'fase' as const })), ...ladoII('out')], 'base'),
       ];
     }
     case 'dr':
@@ -48,6 +51,8 @@ export function bornesDaPeca(peca: Peca, p: Projeto): Borne[] {
         ...distribuir(n.map((k) => ({ id: `out:${k}`, rotulo: k, sugestao: sug(k) })), 'base'),
       ];
     }
+    case 'quadro':
+      return [];
     case 'emenda':
       return [
         { id: 'e:t', rotulo: '', lado: 'centro-topo', fracao: 0.5 },
@@ -71,8 +76,17 @@ export function bornesDaPeca(peca: Peca, p: Projeto): Borne[] {
 }
 
 // Pares de bornes que viram o mesmo ponto quando o dispositivo está FECHADO (ligado).
-function contatos(peca: Peca): [string, string][] {
-  if (peca.tipo === 'disjuntor') return Array.from({ length: peca.polos }, (_, i) => [`in:${i + 1}`, `out:${i + 1}`]);
+// `forcado`: o chamador quer a peça fechada mesmo desligada (ex.: pior caso); na transferência vale o lado I.
+function contatos(peca: Peca, forcado = false): [string, string][] {
+  if (peca.tipo === 'disjuntor') {
+    const polos = Array.from({ length: peca.polos }, (_, i) => String(i + 1));
+    if (!peca.transferencia) return polos.map((k) => [`in:${k}`, `out:${k}`]);
+    const I = peca.ligado || (forcado && !peca.II?.ligado);
+    return [
+      ...(I ? polos.map((k): [string, string] => [`in:${k}`, `out:${k}`]) : []),
+      ...(peca.II?.ligado ? polos.map((k): [string, string] => [`inII:${k}`, `outII:${k}`]) : []),
+    ];
+  }
   if (peca.tipo === 'dr' || peca.tipo === 'medidor') return polosDR(peca.polos).map((k) => [`in:${k}`, `out:${k}`]);
   return [];
 }
@@ -129,9 +143,9 @@ export function montarRede(p: Projeto, op: OpcoesRede): Rede {
     for (const b of bornesDaPeca(peca, p)) achar(chave(peca.id, b.id));
     const sempre = unidosSempre(peca, p);
     for (let i = 1; i < sempre.length; i++) unir(chave(peca.id, sempre[0]), chave(peca.id, sempre[i]));
-    // O medidor não tem chave: está sempre fechado.
+    // Medidor não tem chave: está sempre fechado.
     if (peca.id !== op.abrir && (peca.tipo === 'medidor' || op.fechado(peca))) {
-      for (const [a, b] of contatos(peca)) unir(chave(peca.id, a), chave(peca.id, b));
+      for (const [a, b] of contatos(peca, !estaFechado(peca))) unir(chave(peca.id, a), chave(peca.id, b));
     }
   }
   for (const c of p.cabos) unir(chave(c.de.peca, c.de.borne), chave(c.para.peca, c.para.borne));
@@ -160,7 +174,10 @@ export function montarRede(p: Projeto, op: OpcoesRede): Rede {
   };
 }
 
-export const estaFechado = (peca: Peca) => (peca.tipo === 'disjuntor' || peca.tipo === 'dr') && peca.ligado;
+export function estaFechado(peca: Peca): boolean {
+  if (peca.tipo === 'disjuntor') return peca.ligado || (!!peca.transferencia && !!peca.II?.ligado);
+  return peca.tipo === 'dr' && peca.ligado;
+}
 
 export function rotuloPotencial(pt: Potencial): string {
   const partes = [...pt.fases].sort().map((f) => `fase ${f}`);

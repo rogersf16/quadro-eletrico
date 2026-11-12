@@ -17,9 +17,10 @@ import {
 import '@xyflow/react/dist/style.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CONDUTORES_ROTULO, focoDe } from './foco';
+import { tamanhoPeca } from '../../core/layout';
 import { layoutAutomatico, type LadoPorta, type MedidaPeca } from '../../core/layoutAuto';
 import { montarRede } from '../../core/rede';
-import { simular, simularPiorCaso } from '../../core/simulacao';
+import { correntesDosCabos, simular, simularPiorCaso } from '../../core/simulacao';
 import type { Condutor } from '../../core/types';
 import { chaveEletrica } from '../chave';
 import { validarCarga, validarDisjuntor, piorNivel, type Nivel } from '../../core/validacao';
@@ -55,6 +56,8 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
   // Simulação e validações só recalculam quando a parte elétrica muda.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const sim = useMemo(() => simular(projeto), [chave]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const cargaCabos = useMemo(() => correntesDosCabos(projeto, sim), [sim]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const niveis = useMemo(() => {
     const pior = simularPiorCaso(projeto);
@@ -100,8 +103,10 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
         data: {},
         selected: selecao?.tipo === 'peca' && selecao.id === x.id,
         deletable: x.tipo !== 'entrada',
-        zIndex: x.tipo === 'emenda' ? 2 : 1,
-        className: foco && !foco.pecas.has(x.id) ? 'peca-fora-foco' : '',
+        // Caixas bem atrás de tudo (mesmo selecionadas, que ganham +1000), inclusive dos cabos.
+        zIndex: x.tipo === 'quadro' ? -1001 : x.tipo === 'emenda' ? 2 : 1,
+        ...(x.tipo === 'quadro' ? { width: x.w, height: x.h, dragHandle: '.quadro-titulo' } : {}),
+        className: x.tipo !== 'quadro' && foco && !foco.pecas.has(x.id) ? 'peca-fora-foco' : '',
       }));
     });
   }, [projeto.pecas, selecao, foco]);
@@ -120,12 +125,36 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
     [projeto.cabos, selecao],
   );
 
+  // Ao começar a arrastar uma caixa, guarda o que está dentro dela (pelo centro de cada peça).
+  // Guardar no início evita que a caixa "pesque" peças por onde passa.
+  const dentroDaCaixa = useRef<Record<string, string[]>>({});
+  const onNodeDragStart = useCallback(
+    (_: unknown, _n: Node, arrastados: Node[]) => {
+      const ids = new Set(arrastados.map((n) => n.id));
+      dentroDaCaixa.current = {};
+      for (const caixa of projeto.pecas) {
+        if (caixa.tipo !== 'quadro' || !ids.has(caixa.id)) continue;
+        const { x, y } = caixa.pos;
+        dentroDaCaixa.current[caixa.id] = projeto.pecas
+          .filter((k) => {
+            if (k.id === caixa.id || ids.has(k.id)) return false;
+            const t = tamanhoPeca(k);
+            const cx = k.pos.x + t.w / 2;
+            const cy = k.pos.y + t.h / 2;
+            return cx >= x && cx <= x + caixa.w && cy >= y && cy <= y + caixa.h;
+          })
+          .map((k) => k.id);
+      }
+    },
+    [projeto.pecas],
+  );
+
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       setNodes((n) => applyNodeChanges(changes, n));
       const remover: string[] = [];
       for (const c of changes) {
-        if (c.type === 'position' && c.position) acoes.moverPeca(c.id, c.position);
+        if (c.type === 'position' && c.position) acoes.moverPeca(c.id, c.position, c.dragging ? dentroDaCaixa.current[c.id] : []);
         if (c.type === 'select' && c.selected) onSelecionar({ tipo: 'peca', id: c.id });
         if (c.type === 'remove') remover.push(c.id);
       }
@@ -199,6 +228,7 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
     const lado: Record<string, LadoPorta> = { top: 'topo', bottom: 'base', left: 'esq', right: 'dir' };
     const medidas: MedidaPeca[] = [];
     for (const x of projeto.pecas) {
+      if (x.tipo === 'quadro') continue; // caixas ficam onde estão
       const n = rf.getInternalNode(x.id);
       const w = n?.measured.width;
       const h = n?.measured.height;
@@ -229,6 +259,7 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
     () => ({
       projeto,
       sim,
+      cargaCabos,
       niveis,
       acoes,
       selecionar: onSelecionar,
@@ -237,7 +268,7 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
       visiveis,
       bitolas,
     }),
-    [projeto, sim, niveis, acoes, onSelecionar, foco, alvo?.tipo, alvo?.id, visiveis, bitolas], // eslint-disable-line react-hooks/exhaustive-deps
+    [projeto, sim, cargaCabos, niveis, acoes, onSelecionar, foco, alvo?.tipo, alvo?.id, visiveis, bitolas], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   return (
@@ -245,6 +276,7 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
       <section className={`mapa-wrap ${expandido ? 'expandido' : ''}`}>
         <div className="barra-ferramentas">
           <span className="grupo-rotulo">Adicionar:</span>
+          <button onClick={() => adicionar('quadro')} title="Caixa com nome pra agrupar peças (ex.: Quadro quarto)">Quadro</button>
           <button onClick={() => adicionar('disjuntor')}>Disjuntor</button>
           <button onClick={() => adicionar('dr')}>DR</button>
           <button onClick={() => adicionar('medidor')} title="Medidor de energia DIN: mostra tensão e corrente, não protege">Medidor</button>
@@ -256,7 +288,7 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
           <button onClick={() => acoes.ligarTudo(true)}>Ligar tudo</button>
           <button onClick={() => acoes.ligarTudo(false)}>Desligar tudo</button>
           <button onClick={organizar} disabled={organizando} title="Reposiciona as peças e traça os cabos com o mínimo de cruzamentos">
-            {organizando ? 'Organizando…' : '✨ Organizar'}
+            {organizando ? 'Organizando…' : 'Organizar'}
           </button>
           <button onClick={onExpandir}>{expandido ? '⤡ Recolher' : '⤢ Expandir'}</button>
         </div>
@@ -299,6 +331,8 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
             nodeTypes={tiposDeNo}
             edgeTypes={tiposDeCabo}
             onNodesChange={onNodesChange}
+            onNodeDragStart={onNodeDragStart}
+            onNodeDragStop={() => (dentroDaCaixa.current = {})}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onPaneClick={() => onSelecionar(null)}
@@ -319,7 +353,7 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
           >
             <Background variant={BackgroundVariant.Dots} gap={16} size={1.2} />
             <Controls showInteractive={false} />
-            <MiniMap pannable zoomable nodeStrokeWidth={2} />
+            <MiniMap pannable zoomable nodeStrokeWidth={2} style={{ width: 150, height: 100 }} />
             <Faiscas lista={faiscas} />
           </ReactFlow>
         </div>

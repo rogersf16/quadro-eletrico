@@ -21,7 +21,9 @@ export function SeletorFornecimento({ valor, onChange, compacto }: Props) {
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => onChange(f.valor)}
         >
-          {f.curto}
+          {f.curto.split(' · ').map((parte, i) => (
+            <span key={i} className="linha">{parte}</span>
+          ))}
         </button>
       ))}
     </div>

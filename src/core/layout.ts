@@ -5,15 +5,18 @@ export const barramentoVertical = (b: PecaBarramento) => b.orientacao === 'verti
 
 export const MODULO = 56; // largura de 1 polo (px)
 export const GRADE = 8;
-export const ETIQUETA = 102; // espaço da etiqueta lateral dos disjuntores/DRs
+export const ETIQUETA = 122; // espaço da etiqueta lateral dos disjuntores/DRs (6 de vão + 116)
 
 export function tamanhoPeca(p: Peca): { w: number; h: number } {
   switch (p.tipo) {
+    case 'quadro':
+      return { w: p.w, h: p.h };
     case 'entrada':
       return { w: 232, h: 136 };
     // Corpo (polos × módulo) + etiqueta na lateral (6 de vão + 96 de largura).
     case 'disjuntor':
-      return { w: p.polos * MODULO + ETIQUETA, h: 150 };
+      // Transferência = dois disjuntores lado a lado.
+      return { w: (p.transferencia ? 2 : 1) * p.polos * MODULO + ETIQUETA, h: 150 };
     case 'dr':
     case 'medidor':
       return { w: p.polos * MODULO + ETIQUETA, h: 150 };
@@ -62,6 +65,7 @@ export function organizar(p: Projeto): Projeto {
   const camadas = new Map<number, Peca[]>();
   for (const id of ordem) {
     const peca = p.pecas.find((x) => x.id === id)!;
+    if (peca.tipo === 'quadro') continue; // caixas ficam onde estão
     const n = nivel.get(id)!;
     if (!camadas.has(n)) camadas.set(n, []);
     camadas.get(n)!.push(peca);

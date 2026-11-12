@@ -1,7 +1,7 @@
 // Criação, (des)serialização e fábrica de peças/cabos. Puro: roda no navegador ou num servidor Node.
 import { BITOLAS, CORES_CONDUTOR, capacidadeFio, condutorInfo, tipoCargaInfo } from './catalogo';
 import { migrarParaV3 } from './migracao';
-import type { Cabo, Condutor, Peca, PecaBarramento, PecaCarga, PecaDisjuntor, PecaDR, PecaEmenda, PecaMedidor, Ponta, Posicao, Projeto, TipoCarga } from './types';
+import type { Cabo, Condutor, Peca, PecaBarramento, PecaCarga, PecaDisjuntor, PecaDR, PecaEmenda, PecaMedidor, PecaQuadro, Ponta, Posicao, Projeto, TipoCarga } from './types';
 import { ID_ENTRADA } from './types';
 
 export const VERSAO_FORMATO = 3;
@@ -27,6 +27,10 @@ export const novoMedidor = (pos: Posicao, m: Partial<PecaMedidor> = {}): PecaMed
   id: novoId(), tipo: 'medidor', nome: 'Medidor', notas: '', pos, polos: 2, correnteMax: 63, ...m,
 });
 
+export const novoQuadro = (pos: Posicao, m: Partial<PecaQuadro> = {}): PecaQuadro => ({
+  id: novoId(), tipo: 'quadro', nome: 'Quadro', notas: '', pos, w: 360, h: 260, cor: '#4f7cff', ...m,
+});
+
 export const novaEmenda = (pos: Posicao, m: Partial<PecaEmenda> = {}): PecaEmenda => ({
   id: novoId(), tipo: 'emenda', nome: 'Emenda', notas: '', pos, ...m,
 });
@@ -50,8 +54,8 @@ export const bitolaPara = (corrente: number) => BITOLAS.find((b) => capacidadeFi
 
 export function projetoVazio(): Projeto {
   const geral = novoDisjuntor({ x: 88, y: 232 }, { id: 'geral', nome: 'Disjuntor geral', geral: true, corrente: 50, polos: 2, ligado: true });
-  const barN = novoBarramento({ x: 296, y: 296 }, { nome: 'Barramento neutro' });
-  const barT = novoBarramento({ x: 296, y: 400 }, { nome: 'Barramento terra', condutor: 'terra' });
+  const barN = novoBarramento({ x: 344, y: 296 }, { nome: 'Barramento neutro' });
+  const barT = novoBarramento({ x: 344, y: 400 }, { nome: 'Barramento terra', condutor: 'terra' });
   const pecas: Peca[] = [
     { id: ID_ENTRADA, tipo: 'entrada', nome: 'Entrada da rua', notas: '', pos: { x: 40, y: 24 }, faltando: [] },
     geral,
@@ -95,7 +99,30 @@ export function desserializar(texto: string): Projeto {
   if (dados.versao !== VERSAO_FORMATO || !Array.isArray(dados.pecas) || !Array.isArray(dados.cabos)) {
     throw new Error(`Versão de arquivo não suportada: ${String(dados.versao)}`);
   }
-  return dados as unknown as Projeto;
+  const proj = dados as unknown as Projeto;
+  // Peça "transferencia" de versões de teste anteriores: vira disjuntor com a opção de transferência.
+  const renomear = new Map<string, Record<string, string>>();
+  proj.pecas = proj.pecas.map((x) => {
+    const y = x as unknown as Record<string, unknown>;
+    if (y.tipo !== 'transferencia') return x;
+    const lado = (k: unknown) => (k && typeof k === 'object' ? (k as { ligado: boolean; desarmado: boolean }) : { ligado: false, desarmado: false });
+    const I = y.I ? lado(y.I) : { ligado: y.posicao === 'I', desarmado: false };
+    const II = y.II ? lado(y.II) : { ligado: y.posicao === 'II', desarmado: false };
+    const polos = y.polos === 4 ? 3 : 1;
+    const mapa: Record<string, string> = {};
+    for (let k = 1; k <= polos; k++) Object.assign(mapa, { [`I:${k}`]: `in:${k}`, [`II:${k}`]: `inII:${k}` });
+    renomear.set(x.id, mapa);
+    return {
+      id: x.id, tipo: 'disjuntor', nome: x.nome, notas: x.notas, pos: x.pos, geral: false, polos,
+      corrente: (y.corrente as number) ?? 63, curva: (y.curva as PecaDisjuntor['curva']) ?? 'C', sintoma: 'nenhum',
+      ligado: I.ligado, desarmado: I.desarmado, transferencia: true, II,
+    } satisfies PecaDisjuntor;
+  });
+  if (renomear.size) {
+    const ponta = (k: Ponta) => ({ ...k, borne: renomear.get(k.peca)?.[k.borne] ?? k.borne });
+    proj.cabos = proj.cabos.map((c) => ({ ...c, de: ponta(c.de), para: ponta(c.para) }));
+  }
+  return proj;
 }
 
 export function nomeArquivo(p: Projeto): string {

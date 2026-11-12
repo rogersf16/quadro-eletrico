@@ -62,10 +62,10 @@ input[type='checkbox'] { width: auto; }
 .acoes { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
 .cabecalho .acoes { margin: 0; }
 
-.layout { display: grid; gap: 16px; align-items: start; grid-template-columns: 290px minmax(0, 1fr); grid-template-areas: 'lat mapa'; }
-.layout.com-editor { grid-template-columns: 290px minmax(0, 1fr) 360px; grid-template-areas: 'lat mapa ed'; }
+.layout { display: grid; gap: 14px; align-items: start; grid-template-columns: 260px minmax(0, 1fr); grid-template-areas: 'lat mapa'; }
+.layout.com-editor { grid-template-columns: 260px minmax(0, 1fr) 380px; grid-template-areas: 'lat mapa ed'; }
 .layout.expandido { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'mapa' 'lat'; }
-.layout.expandido.com-editor { grid-template-columns: minmax(0, 1fr) 360px; grid-template-areas: 'mapa ed' 'lat lat'; }
+.layout.expandido.com-editor { grid-template-columns: minmax(0, 1fr) 380px; grid-template-areas: 'mapa ed' 'lat lat'; }
 .lateral { grid-area: lat; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .layout.expandido .lateral { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
 .principal { grid-area: mapa; min-width: 0; }
@@ -79,7 +79,10 @@ input[type='checkbox'] { width: auto; }
 .campo { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.75rem; }
 .campo-rotulo { font-size: 0.8rem; font-weight: 600; color: var(--texto-2); }
 .campo-dica { font-size: 0.78rem; color: var(--texto-2); margin: 0 0 0.5rem; }
-.grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0 0.75rem; }
+.grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0 0.75rem; }
+.grade select, .grade input { width: 100%; min-width: 0; }
+.campo-dica { text-wrap: pretty; }
+.check { line-height: 1.25; }
 .check { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; margin-bottom: 0.75rem; }
 .selo { font-size: 0.72rem; padding: 0.1rem 0.5rem; border-radius: 99px; font-weight: 600; }
 .selo-erro { background: var(--erro-bg); color: var(--erro); }
@@ -99,6 +102,8 @@ input[type='checkbox'] { width: auto; }
 .chip { font-size: 0.8rem; padding: 0.25rem 0.6rem; border-radius: 99px; display: inline-flex; align-items: center; gap: 0.3rem; }
 .barra-fase { margin-bottom: 0.6rem; }
 .barra-rotulo { display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 0.2rem; gap: 0.5rem; }
+.barra-rotulo > span { white-space: nowrap; }
+.barra-rotulo .num { font-size: 0.76rem; color: var(--texto-2); }
 .barra-trilho { position: relative; height: 10px; border-radius: 99px; background: var(--bg); overflow: hidden; }
 .barra-max { position: absolute; inset: 0 auto 0 0; background: var(--borda); border-radius: 99px; }
 .barra-valor { position: relative; height: 100%; border-radius: 99px; transition: width 0.2s; }
@@ -106,7 +111,8 @@ input[type='checkbox'] { width: auto; }
 .nivel-aviso { background: var(--aviso); }
 .nivel-erro { background: var(--erro); }
 .segmentado { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--borda); border-radius: 8px; overflow: hidden; }
-.segmentado button { border: 0; border-radius: 0; padding: 0.4rem 0.2rem; font-size: 0.78rem; background: var(--bg); }
+.segmentado button { border: 0; border-radius: 0; padding: 0.4rem 0.2rem; font-size: 0.78rem; background: var(--bg); line-height: 1.2; }
+.segmentado .linha { display: block; white-space: nowrap; }
 .segmentado button + button { border-left: 1px solid var(--borda); }
 .segmentado button.ativo { background: var(--primario); color: var(--primario-txt); font-weight: 700; }
 .segmentado.compacto button { font-size: 0.62rem; padding: 0.28rem 0.1rem; line-height: 1.1; }
@@ -133,7 +139,8 @@ input[type='checkbox'] { width: auto; }
 
 /* ---------- Mapa ---------- */
 .mapa-wrap { background: var(--painel); border: 1px solid var(--borda); border-radius: 12px; overflow: hidden; }
-.barra-ferramentas { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; padding: 10px 12px 6px; }
+.barra-ferramentas { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; padding: 8px 10px 4px; }
+.barra-ferramentas button { padding: 0.3rem 0.6rem; font-size: 0.85rem; }
 .grupo-rotulo { font-size: 0.78rem; font-weight: 600; color: var(--texto-2); }
 .separador { width: 1px; align-self: stretch; background: var(--borda); margin: 0 0.25rem; }
 .dica-mapa { margin: 0; padding: 0 12px 8px; font-size: 0.76rem; color: var(--texto-2); border-bottom: 1px solid var(--borda); }
@@ -232,9 +239,9 @@ input[type='checkbox'] { width: auto; }
 .btn-teste { width: 18px; height: 18px; padding: 0; border-radius: 50%; font-size: 0.6rem; font-weight: 800; background: #f1c40f; border: 1px solid #a88905; color: #3b3000; line-height: 1; }
 .led { position: absolute; top: 26px; right: 5px; width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.2); }
 .sintoma-flag { position: absolute; top: 22px; left: 6px; font-weight: 900; color: var(--erro); font-size: 0.85rem; }
-.disp-etiqueta { width: 96px; flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 3px 4px; border-radius: 6px; background: var(--painel); border: 1px solid var(--borda); font-size: 0.68rem; text-align: left; line-height: 1.15; color: var(--texto); }
-.disp-nome { overflow-wrap: anywhere; max-height: 3.5em; overflow: hidden; font-weight: 600; }
-.disp-info { font-size: 0.64rem; color: var(--texto-2); font-variant-numeric: tabular-nums; }
+.disp-etiqueta { width: 116px; flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 3px 4px; border-radius: 6px; background: var(--painel); border: 1px solid var(--borda); font-size: 0.68rem; text-align: left; line-height: 1.15; color: var(--texto); }
+.disp-nome { max-width: 100%; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.disp-info { max-width: 100%; font-size: 0.64rem; color: var(--texto-2); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .disp-info.vivo { color: #b77800; font-weight: 700; }
 
 /* Entrada */
@@ -304,7 +311,7 @@ input[type='checkbox'] { width: auto; }
 .cabo-rotulo-cor { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35); }
 
 @media (prefers-reduced-motion: reduce) {
-  .cabo-fluxo, .janela-trip, .est-trip .disp-corpo { animation: none; }
+  .cabo-fluxo, .janela-trip, .est-trip .disp-corpo, .cabo-quente { animation: none; }
   .alavanca, .ponte { transition: none; }
 }
 
@@ -357,3 +364,49 @@ input[type='checkbox'] { width: auto; }
   to { transform: rotate(var(--a)) translateX(var(--d)) scaleX(0.3); opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .faisca { display: none; } }
+
+/* Caixa / quadro: fundo translúcido da cor escolhida. Só o título pega clique; o resto deixa passar pro mapa. */
+.react-flow__node-quadro { pointer-events: none !important; }
+.react-flow__node-quadro .quadro-titulo,
+.react-flow__node-quadro .react-flow__resize-control { pointer-events: all; }
+.quadro-caixa { width: 100%; height: 100%; border-radius: 12px; border: 2px solid var(--cor); background: color-mix(in srgb, var(--cor) 14%, transparent); }
+.quadro-titulo { display: inline-block; max-width: calc(100% - 16px); margin: 8px; padding: 3px 10px; border-radius: 6px; background: var(--cor); color: #fff; font-weight: 700; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: grab; text-shadow: 0 1px 1px rgb(0 0 0 / 0.3); }
+.react-flow__node-quadro.selected .quadro-caixa { box-shadow: 0 0 0 3px var(--sel); }
+.cores-quadro { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cor-quadro { width: 26px; height: 26px; padding: 0; border-radius: 50%; border: 2px solid transparent; }
+.cor-quadro.ativa { border-color: var(--texto); box-shadow: 0 0 0 2px var(--painel) inset; }
+.cores-quadro input[type="color"] { width: 32px; height: 28px; padding: 0; border: none; background: none; }
+
+/* Cabo sobrecarregado: bitola não aguenta a corrente. Brilho vermelho pulsando e o fluxo "desgovernado":
+   dois traços com ritmos e sentidos diferentes, indo e voltando aos trancos. */
+.cabo-quente { fill: none; stroke: #ff3b1f; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; opacity: 0.25; animation: cabo-quente 0.8s ease-in-out infinite alternate; }
+@keyframes cabo-quente { to { opacity: 0.55; } }
+.cabo-fluxo-louco.a { stroke: #ffd23f; stroke-dasharray: 3 7 9 4 2 11; animation: fluxo-louco-a 0.55s linear infinite; opacity: 1; }
+.cabo-fluxo-louco.b { stroke: #ff6a2a; stroke-dasharray: 5 13 2 6; animation: fluxo-louco-b 0.37s steps(3) infinite; opacity: 0.95; }
+@keyframes fluxo-louco-a {
+  0% { stroke-dashoffset: 0; }
+  20% { stroke-dashoffset: -17; }
+  35% { stroke-dashoffset: -9; }
+  60% { stroke-dashoffset: -31; }
+  75% { stroke-dashoffset: -24; }
+  100% { stroke-dashoffset: -36; }
+}
+@keyframes fluxo-louco-b {
+  0% { stroke-dashoffset: 0; }
+  40% { stroke-dashoffset: 13; }
+  70% { stroke-dashoffset: 4; }
+  100% { stroke-dashoffset: 26; }
+}
+.cabo-rotulo.sobrecarga { background: #ffe1db; border-color: #e0301a; color: #8a1206; }
+@media (prefers-reduced-motion: reduce) { .cabo-fluxo-louco.a, .cabo-fluxo-louco.b { animation: none; } }
+
+/* Disjuntor de transferência: dois lados (I e II) no mesmo corpo, com a trava de intertravamento no meio */
+.transf-face { position: relative; flex: 1; display: flex; padding: 24px 2px 4px; }
+.transf-lado { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 3px; }
+.transf-nome { font-size: 0.62rem; font-weight: 800; color: #8a9099; padding: 0 6px; border-bottom: 2px solid #c9cdd3; }
+.transf-nome.viva { color: #b77800; border-color: #f2a900; }
+.transf-lado + .transf-lado { border-left: 1px dashed #b6bbc3; }
+.transf-trava { position: absolute; left: 50%; top: 58%; width: 18px; height: 6px; margin-left: -9px; border-radius: 3px; background: #2b2f36; box-shadow: 0 0 0 1px #fff; }
+.transf-marca { text-align: center; margin-bottom: 24px; }
+.transf-lado.est-trip .alavancas { animation: tremer 0.35s ease-out; }
+@media (prefers-reduced-motion: reduce) { .transf-lado.est-trip .alavancas { animation: none; } }

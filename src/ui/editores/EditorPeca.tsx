@@ -2,7 +2,7 @@
 import type { ReactNode } from 'react';
 import { CORRENTES_DR, CORRENTES_MEDIDOR, TIPOS_CARGA, fornecimentoInfo, tipoCargaInfo } from '../../core/catalogo';
 import { simular, simularPiorCaso } from '../../core/simulacao';
-import type { Peca, PecaBarramento, PecaCarga, PecaDR, PecaEmenda, PecaEntrada, PecaMedidor, OrientacaoBarramento, Projeto, TipoCarga } from '../../core/types';
+import type { Peca, PecaBarramento, PecaCarga, PecaDR, PecaEmenda, PecaEntrada, PecaMedidor, PecaQuadro, OrientacaoBarramento, Projeto, TipoCarga } from '../../core/types';
 import { drsQueProtegem, piorNivel, validarCarga } from '../../core/validacao';
 import { Campo, Selo } from '../components/Campo';
 import type { Selecao } from '../mapa/contexto';
@@ -34,6 +34,40 @@ function Rodape<T extends Peca>({ peca, acoes, onSelecionar, rotulo }: Props<T> 
         <button className="perigo" onClick={() => { acoes.removerPecas([peca.id]); onSelecionar(null); }}>{rotulo}</button>
       </div>
     </>
+  );
+}
+
+const CORES_QUADRO = ['#4f7cff', '#2e9e4f', '#e08a00', '#d0302a', '#8b5cf6', '#0ea5a4', '#db2777', '#6b7280'];
+
+export function EditorQuadro(props: Props<PecaQuadro>) {
+  const { peca: q, acoes, onSelecionar } = props;
+  const mudar = (m: Partial<PecaQuadro>) => acoes.atualizarPeca(q.id, m);
+  return (
+    <section className="painel editor">
+      <Topo titulo={q.nome} extra={<span className="selo">Quadro</span>} onFechar={() => onSelecionar(null)} />
+      <p className="campo-dica">
+        Caixa pra agrupar peças, como um quadro separado (ex.: "Quadro quarto"). É só visual: não muda a simulação.
+        Arraste pelo <b>título</b> pra mover junto o que está dentro e use os cantos pra aumentar ou diminuir.
+      </p>
+      <Campo rotulo="Nome">
+        <input value={q.nome} onChange={(e) => mudar({ nome: e.target.value })} />
+      </Campo>
+      <Campo rotulo="Cor">
+        <div className="cores-quadro">
+          {CORES_QUADRO.map((c) => (
+            <button
+              key={c}
+              className={`cor-quadro ${q.cor === c ? 'ativa' : ''}`}
+              style={{ background: c }}
+              onClick={() => mudar({ cor: c })}
+              aria-label={`Cor ${c}`}
+            />
+          ))}
+          <input type="color" value={q.cor} onChange={(e) => mudar({ cor: e.target.value })} title="Outra cor" />
+        </div>
+      </Campo>
+      <Rodape {...props} rotulo="Remover quadro" />
+    </section>
   );
 }
 

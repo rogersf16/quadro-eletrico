@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { Simulacao } from '../../core/simulacao';
+import type { CargaCabo, Simulacao } from '../../core/simulacao';
 import type { Condutor, Projeto } from '../../core/types';
 import type { Nivel } from '../../core/validacao';
 import type { Acoes } from '../useProjeto';
@@ -13,6 +13,7 @@ export interface Selecao {
 export interface MapaCtxValor {
   projeto: Projeto;
   sim: Simulacao;
+  cargaCabos: Record<string, CargaCabo>; // corrente x capacidade de cada cabo, agora
   niveis: Record<string, Nivel>;
   acoes: Acoes;
   selecionar: (s: Selecao | null) => void;

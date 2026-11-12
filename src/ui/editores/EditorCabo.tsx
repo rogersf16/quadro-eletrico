@@ -1,7 +1,8 @@
 import { BITOLAS, CONDUTORES, CORES_CABO, capacidadeFio, condutorInfo } from '../../core/catalogo';
 import { borneInfo, montarRede, estaFechado, rotuloPotencial } from '../../core/rede';
+import { correntesDosCabos, simular } from '../../core/simulacao';
 import type { Cabo, Condutor, Projeto } from '../../core/types';
-import { Campo } from '../components/Campo';
+import { Campo, Selo } from '../components/Campo';
 import type { Acoes } from '../useProjeto';
 
 interface Props {
@@ -16,7 +17,7 @@ const nomePonta = (p: Projeto, peca: string, borne: string) => {
   const b = borneInfo(p, peca, borne);
   if (!x) return '?';
   if (x.tipo === 'emenda') return x.nome;
-  const lado = borne.startsWith('in:') ? 'entrada ' : borne.startsWith('out:') ? 'saída ' : '';
+  const lado = borne.startsWith('in:') ? 'entrada ' : borne.startsWith('out:') ? 'saída ' : borne.startsWith('inII:') ? 'entrada II ' : borne.startsWith('outII:') ? 'saída II ' : '';
   return `${x.nome} · ${lado}${b?.rotulo ?? borne}`;
 };
 
@@ -25,6 +26,8 @@ export function EditorCabo({ cabo, projeto: p, acoes, onFechar }: Props) {
   const ent = p.pecas.find((x) => x.tipo === 'entrada');
   const rede = montarRede(p, { fechado: estaFechado, faltando: ent?.tipo === 'entrada' ? ent.faltando : [] });
   const pot = rotuloPotencial(rede.potencial(cabo.de.peca, cabo.de.borne));
+  const carga = correntesDosCabos(p, simular(p))[cabo.id];
+  const fmtA = (n: number) => `${n.toFixed(1).replace('.', ',')} A`;
 
   return (
     <section className="painel editor">
@@ -38,6 +41,15 @@ export function EditorCabo({ cabo, projeto: p, acoes, onFechar }: Props) {
         {nomePonta(p, cabo.de.peca, cabo.de.borne)} <span aria-hidden>⟷</span> {nomePonta(p, cabo.para.peca, cabo.para.borne)}
       </p>
       <p className="campo-dica">Agora: {pot || 'sem potencial'}</p>
+      {carga && carga.corrente > 0 && (
+        <p className="campo-dica">
+          {carga.sobrecarga && <Selo nivel="erro" />} Passando {fmtA(carga.corrente)} de ~{carga.capacidade} A que esse cabo aguenta
+          {carga.sobrecarga &&
+            (carga.bitolaMinima
+              ? `. Troque por ${String(carga.bitolaMinima).replace('.', ',')} mm² ou mais.`
+              : '. Nem 35 mm² aguenta: divida a carga.')}
+        </p>
+      )}
 
       <Campo rotulo="Bitola (seção do cobre)" dica={`Aguenta ~${capacidadeFio(cabo.bitola)} A embutido em eletroduto. Vem impressa na capa do fio.`}>
         <div className="opcoes-bitola">

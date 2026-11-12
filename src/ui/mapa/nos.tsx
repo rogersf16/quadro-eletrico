@@ -1,10 +1,10 @@
 // Componentes de cada tipo de peça no mapa. Os bornes são os Handles do React Flow:
 // arrastar de um borne até outro cria um cabo.
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react';
 import { CORES_CONDUTOR, fornecimentoInfo, tipoCargaInfo } from '../../core/catalogo';
 import { MODULO, barramentoVertical, tamanhoPeca } from '../../core/layout';
 import { bornesDaPeca, rotuloPotencial, type Borne, type Lado } from '../../core/rede';
-import type { Fase, Peca, PecaBarramento, PecaCarga, PecaDR, PecaDisjuntor, PecaEmenda, PecaEntrada, PecaMedidor } from '../../core/types';
+import type { Fase, Peca, PecaBarramento, PecaCarga, PecaDR, PecaDisjuntor, PecaEmenda, PecaEntrada, PecaMedidor, PecaQuadro } from '../../core/types';
 import { SeletorFornecimento } from '../components/SeletorFornecimento';
 import { useMapa } from './contexto';
 
@@ -115,12 +115,86 @@ function Chave({ peca }: { peca: PecaDisjuntor | PecaDR }) {
 
 export function NoDisjuntor({ id }: NodeProps) {
   const p = usePeca<PecaDisjuntor>(id);
-  return p ? <Chave peca={p} /> : null;
+  if (!p) return null;
+  return p.transferencia ? <ChaveTransferencia peca={p} /> : <Chave peca={p} />;
 }
 
 export function NoDR({ id }: NodeProps) {
   const p = usePeca<PecaDR>(id);
   return p ? <Chave peca={p} /> : null;
+}
+
+// ---------- Disjuntor de transferência manual (dois lados com intertravamento) ----------
+function ChaveTransferencia({ peca: p }: { peca: PecaDisjuntor }) {
+  const { sim, niveis, acoes } = useMapa();
+  const info = sim.dispositivos[p.id];
+  const II = p.II ?? { ligado: false, desarmado: false };
+  const lados = { I: { ligado: p.ligado, desarmado: p.desarmado }, II };
+  const ativo = p.ligado ? 'I' : II.ligado ? 'II' : null;
+  const prefixo = { I: 'in', II: 'inII' } as const;
+  const viva = (l: 'I' | 'II') => Array.from({ length: p.polos }, (_, k) => k + 1).some((k) => sim.rede.potencial(p.id, `${prefixo[l]}:${k}`).fases.size > 0);
+  const estado = (l: 'I' | 'II') => (lados[l].desarmado ? 'trip' : lados[l].ligado ? 'on' : 'off');
+  const nivel = niveis[p.id];
+  return (
+    <div className={`disp disp-circuito disp-transf ${info?.saida ? 'energizado' : ''}`}>
+      <div className="disp-corpo" style={{ width: 2 * p.polos * MODULO }}>
+        <Bornes peca={p} lados={['topo']} />
+        <div className="transf-face">
+          {(['I', 'II'] as const).map((l) => {
+            const est = estado(l);
+            return (
+              <div key={l} className={`transf-lado est-${est}`}>
+                <div className={`transf-nome ${viva(l) ? 'viva' : ''}`}>{l}</div>
+                <button
+                  className="alavancas nodrag"
+                  onClick={() => acoes.alternarLado(p.id, l)}
+                  title={est === 'trip' ? `Lado ${l} desarmado: clique pra rearmar` : est === 'on' ? `Desligar lado ${l}` : `Ligar lado ${l} (o outro precisa estar desligado)`}
+                >
+                  {Array.from({ length: p.polos }, (_, i) => (
+                    <span key={i} className="fenda">
+                      <span className="alavanca" />
+                    </span>
+                  ))}
+                  {p.polos > 1 && <span className="ponte" />}
+                </button>
+                <span className={`janela janela-${est}`}>{{ on: 'ON', off: 'OFF', trip: 'TRIP' }[est]}</span>
+              </div>
+            );
+          })}
+          <span className="transf-trava" title="Intertravamento: só um lado pode ficar ligado" aria-hidden />
+        </div>
+        <div className="disp-marca transf-marca">{p.curva}{p.corrente} · I ⇄ II</div>
+        <Bornes peca={p} lados={['base']} />
+        {nivel && <span className={`led nivel-${nivel}`} title="Status do dimensionamento" />}
+        {p.sintoma !== 'nenhum' && <span className="sintoma-flag" title="Sintoma relatado">!</span>}
+      </div>
+      <div className="disp-etiqueta">
+        <span className="disp-nome">{p.nome}</span>
+        <span className={`disp-info ${info?.saida ? 'vivo' : ''}`}>
+          {info?.saida ? `⚡ ${fmtA(info.corrente)} · lado ${ativo}` : ativo ? `lado ${ativo} · sem energia` : 'os dois lados desligados'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Caixa / quadro (agrupamento visual) ----------
+export function NoQuadro({ id, selected }: NodeProps) {
+  const { acoes } = useMapa();
+  const p = usePeca<PecaQuadro>(id);
+  if (!p) return null;
+  return (
+    <div className="quadro-caixa" style={{ ['--cor' as string]: p.cor }}>
+      <NodeResizer
+        isVisible={selected}
+        minWidth={160}
+        minHeight={100}
+        color={p.cor}
+        onResize={(_, r) => acoes.redimensionarQuadro(id, { x: Math.round(r.x), y: Math.round(r.y) }, Math.round(r.width), Math.round(r.height))}
+      />
+      <div className="quadro-titulo" title="Arraste pelo título pra mover a caixa com o que está dentro">{p.nome}</div>
+    </div>
+  );
 }
 
 // ---------- Medidor de energia (formato DIN, sem chave) ----------
@@ -281,6 +355,7 @@ export function NoCarga({ id }: NodeProps) {
 }
 
 export const tiposDeNo = {
+  quadro: NoQuadro,
   entrada: NoEntrada,
   disjuntor: NoDisjuntor,
   dr: NoDR,

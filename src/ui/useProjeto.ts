@@ -1,20 +1,93 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CORES_CONDUTOR, fasesDoFornecimento, fornecimentoInfo } from '../core/catalogo';
-import { organizar } from '../core/layout';
+import { organizar, tamanhoPeca, encaixar } from '../core/layout';
 import {
-  novaCarga, novaEmenda, novoBarramento, novoCabo, novoDR, novoDisjuntor, novoMedidor, projetoVazio,
+  novaCarga, novaEmenda, novoBarramento, novoCabo, novoDR, novoDisjuntor, novoMedidor, novoQuadro, projetoVazio,
 } from '../core/projeto';
 import { borneInfo, limparCabos } from '../core/rede';
-import { aplicarProtecoes, cabosDoCircuito } from '../core/simulacao';
-import type { Cabo, Fase, Peca, Ponta, Posicao, Projeto } from '../core/types';
+import { aplicarProtecoes, cabosDoCircuito, correntesDosCabos, msgSobrecargaCabo, simular } from '../core/simulacao';
+import type { Cabo, Fase, LadoTransferencia, Peca, Ponta, Posicao, Projeto } from '../core/types';
 import { repositorio } from '../storage';
+import { chaveEletrica } from './chave';
 
-export interface Evento {
-  id: number;
-  msg: string;
+// Avisa só os cabos que PASSARAM a ficar sobrecarregados com a mudança (sem repetir a cada clique).
+function avisosDeCabo(antes: Projeto, depois: Projeto): NovoEvento[] {
+  const agora = correntesDosCabos(depois, simular(depois));
+  const sobre = depois.cabos.filter((c) => agora[c.id]?.sobrecarga);
+  if (!sobre.length) return [];
+  const velho = correntesDosCabos(antes, simular(antes));
+  return sobre
+    .filter((c) => {
+      const v = velho[c.id];
+      const anterior = antes.cabos.find((k) => k.id === c.id);
+      return !v?.sobrecarga || anterior?.bitola !== c.bitola;
+    })
+    .map((c) => ({ msg: msgSobrecargaCabo(depois, c, agora[c.id]), ref: { tipo: 'cabo' as const, id: c.id } }));
 }
 
-export type TipoNovaPeca = 'disjuntor' | 'dr' | 'medidor' | 'carga' | 'emenda' | 'barramento-neutro' | 'barramento-terra';
+// A que problema o aviso se refere. Quando o problema some, o aviso sai sozinho.
+// Sem ref = aviso informativo, que some depois de alguns segundos.
+export type RefEvento =
+  | { tipo: 'cabo'; id: string } // cabo sobrecarregado
+  | { tipo: 'desarme'; id: string } // disjuntor/DR que caiu
+  | { tipo: 'curto' } // curto sem disjuntor no caminho
+  | { tipo: 'fase'; fase: Fase }; // falta de fase simulada
+
+export interface NovoEvento {
+  msg: string;
+  ref?: RefEvento;
+}
+
+// `soAvancar`: só procura pra direita/baixo (usado quando a peça cresce, pra ela não fugir da tela).
+function lugarLivre(pecas: Peca[], nova: Peca, pos: Posicao, soAvancar = false): Posicao {
+  const t = tamanhoPeca(nova);
+  const folga = 16;
+  const ocupados = pecas.filter((x) => x.tipo !== 'quadro').map((x) => ({ ...x.pos, ...tamanhoPeca(x) }));
+  const livre = (x: number, y: number) =>
+    ocupados.every((o) => x + t.w + folga <= o.x || o.x + o.w + folga <= x || y + t.h + folga <= o.y || o.y + o.h + folga <= y);
+  const passo = 32;
+  for (let anel = 0; anel < 40; anel++) {
+    for (let i = -anel; i <= anel; i++) {
+      for (const [dx, dy] of [[i, -anel], [i, anel], [-anel, i], [anel, i]]) {
+        if (soAvancar && (dx < 0 || dy < 0)) continue;
+        const x = encaixar(pos.x + dx * passo);
+        const y = encaixar(pos.y + dy * passo);
+        if (livre(x, y)) return { x, y };
+      }
+    }
+  }
+  return pos;
+}
+
+export interface Evento extends NovoEvento {
+  id: number;
+}
+
+const mesmaRef = (a?: RefEvento, b?: RefEvento) => !!a && !!b && JSON.stringify(a) === JSON.stringify(b);
+
+// O problema do aviso ainda existe nesse projeto?
+function aindaVale(ref: RefEvento, p: Projeto, sim: () => ReturnType<typeof simular>, cabos: () => ReturnType<typeof correntesDosCabos>): boolean {
+  switch (ref.tipo) {
+    case 'desarme': {
+      const x = p.pecas.find((k) => k.id === ref.id);
+      // Transferência: resolvido quando algum lado voltou a ligar ou quando nenhum lado está mais desarmado.
+      if (x?.tipo === 'disjuntor' && x.transferencia) return (x.desarmado || !!x.II?.desarmado) && !x.ligado && !x.II?.ligado;
+      return !!x && (x.tipo === 'disjuntor' || x.tipo === 'dr') && x.desarmado;
+    }
+    case 'cabo':
+      return !!cabos()[ref.id]?.sobrecarga;
+    case 'curto':
+      return sim().curtos.length > 0;
+    case 'fase': {
+      const e = p.pecas.find((k) => k.tipo === 'entrada');
+      return e?.tipo === 'entrada' && e.faltando.includes(ref.fase);
+    }
+  }
+}
+
+const TEMPO_INFORMATIVO = 6000;
+
+export type TipoNovaPeca = 'quadro' | 'disjuntor' | 'dr' | 'medidor' | 'carga' | 'emenda' | 'barramento-neutro' | 'barramento-terra';
 
 let contadorEventos = 0;
 
@@ -50,19 +123,42 @@ export function useProjeto() {
     }, 400);
   }, [projeto, carregado]);
 
-  const registrar = useCallback((msgs: string[]) => {
-    if (msgs.length === 0) return;
-    setEventos((ev) => [...msgs.map((msg) => ({ id: ++contadorEventos, msg })), ...ev].slice(0, 6));
+  const registrar = useCallback((novos: NovoEvento[]) => {
+    if (novos.length === 0) return;
+    const comId = novos.map((n) => ({ ...n, id: ++contadorEventos }));
+    // Um aviso novo sobre o mesmo problema substitui o antigo.
+    setEventos((ev) => [...comId, ...ev.filter((e) => !comId.some((n) => mesmaRef(n.ref, e.ref)))].slice(0, 6));
+    for (const n of comId) {
+      if (!n.ref) setTimeout(() => setEventos((ev) => ev.filter((e) => e.id !== n.id)), TEMPO_INFORMATIVO);
+    }
   }, []);
+
+  // A cada mudança elétrica, tira os avisos cujo problema já foi resolvido.
+  const chave = chaveEletrica(projeto);
+  useEffect(() => {
+    setEventos((ev) => {
+      if (!ev.some((e) => e.ref)) return ev;
+      let s: ReturnType<typeof simular> | undefined;
+      let k: ReturnType<typeof correntesDosCabos> | undefined;
+      const sim = () => (s ??= simular(projeto));
+      const cabos = () => (k ??= correntesDosCabos(projeto, sim()));
+      const ficam = ev.filter((e) => !e.ref || aindaVale(e.ref, projeto, sim, cabos));
+      return ficam.length === ev.length ? ev : ficam;
+    });
+  }, [chave]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Mudança estrutural: aplica, limpa cabos órfãos e roda as proteções.
   const mudar = useCallback(
     (fn: (p: Projeto) => Projeto, protecoes = true) => {
-      const limpo = limparCabos(fn(atual.current));
+      const antes = atual.current;
+      const limpo = limparCabos(fn(antes));
       const r = protecoes ? aplicarProtecoes(limpo) : { projeto: limpo, eventos: [] };
       atual.current = r.projeto;
       setProjeto(r.projeto);
-      registrar(r.eventos);
+      registrar([
+        ...r.eventos.map((e) => ({ msg: e.msg, ref: e.peca ? { tipo: 'desarme' as const, id: e.peca } : e.curto ? { tipo: 'curto' as const } : undefined })),
+        ...avisosDeCabo(antes, r.projeto),
+      ]);
     },
     [registrar],
   );
@@ -91,12 +187,16 @@ export function useProjeto() {
       const n = (t: Peca['tipo']) => p.pecas.filter((x) => x.tipo === t).length + 1;
       const info = fornecimentoInfo(p.fornecimento);
       const peca: Peca =
-        tipo === 'disjuntor' ? novoDisjuntor(pos, { nome: `Circuito ${n('disjuntor')}` })
+        tipo === 'quadro' ? novoQuadro(pos, { nome: `Quadro ${n('quadro')}` })
+        : tipo === 'disjuntor' ? novoDisjuntor(pos, { nome: `Circuito ${n('disjuntor')}` })
         : tipo === 'dr' ? novoDR(pos, { nome: `DR ${n('dr')}`, polos: info.fases > 1 ? 4 : 2 })
         : tipo === 'medidor' ? novoMedidor(pos, { nome: `Medidor ${n('medidor')}`, polos: info.fases > 1 ? 4 : 2 })
         : tipo === 'carga' ? novaCarga(pos, 'tomada', { tensao: info.faseNeutro })
         : tipo === 'emenda' ? novaEmenda(pos, { nome: `Emenda ${n('emenda')}` })
         : novoBarramento(pos, tipo === 'barramento-terra' ? { nome: 'Barramento terra', condutor: 'terra' } : {});
+      // Procura um lugar livre perto do ponto pedido, em anéis, pra peça nova não nascer em cima de outra
+      // (peça escondida embaixo "rouba" o clique da de cima). Caixas (quadro) podem ficar por cima de peças.
+      if (peca.tipo !== 'quadro') peca.pos = lugarLivre(p.pecas, peca, pos);
       mudar((q) => ({ ...q, pecas: [...q.pecas, peca] }), false);
       return peca.id;
     },
@@ -104,7 +204,18 @@ export function useProjeto() {
   );
 
   const atualizarPeca = useCallback(
-    (id: string, m: Partial<Peca>) => mudar((p) => ({ ...p, pecas: p.pecas.map((x) => (x.id === id ? ({ ...x, ...m } as Peca) : x)) })),
+    (id: string, m: Partial<Peca>) =>
+      mudar((p) => {
+        const antes = p.pecas.find((x) => x.id === id);
+        if (!antes) return p;
+        const nova = { ...antes, ...m } as Peca;
+        // Se a peça cresceu (mais polos, transferência...) e passou a cobrir outra, procura um lugar livre ali perto.
+        const [ta, tn] = [tamanhoPeca(antes), tamanhoPeca(nova)];
+        if (nova.tipo !== 'quadro' && (tn.w > ta.w || tn.h > ta.h)) {
+          nova.pos = lugarLivre(p.pecas.filter((x) => x.id !== id), nova, nova.pos, true);
+        }
+        return { ...p, pecas: p.pecas.map((x) => (x.id === id ? nova : x)) };
+      }),
     [mudar],
   );
 
@@ -120,14 +231,37 @@ export function useProjeto() {
 
   // Mover não roda proteções: é só desenho. Cabos dessa peça com rota automática perdem as dobras
   // (ficariam tortos) e voltam ao traçado padrão; o "Organizar" recalcula tudo de novo.
-  const moverPeca = useCallback((id: string, pos: Posicao) => {
-    setProjeto((p) => ({
+  // `junto`: peças que acompanham (as que estavam dentro de uma caixa quando ela começou a ser arrastada).
+  const moverPeca = useCallback((id: string, pos: Posicao, junto: string[] = []) => {
+    setProjeto((p) => {
+      const antes = p.pecas.find((x) => x.id === id)?.pos;
+      const dx = antes ? pos.x - antes.x : 0;
+      const dy = antes ? pos.y - antes.y : 0;
+      const ids = new Set([id, ...junto]);
+      const r = {
       ...p,
-      pecas: p.pecas.map((x) => (x.id === id ? { ...x, pos } : x)),
-      cabos: p.cabos.some((c) => c.rotaAuto && (c.de.peca === id || c.para.peca === id))
-        ? p.cabos.map((c) => (c.rotaAuto && (c.de.peca === id || c.para.peca === id) ? { ...c, pontos: [], rotaAuto: false } : c))
-        : p.cabos,
-    }));
+      pecas: p.pecas.map((x) => (x.id === id ? { ...x, pos } : junto.includes(x.id) ? { ...x, pos: { x: x.pos.x + dx, y: x.pos.y + dy } } : x)),
+      cabos: p.cabos.map((c) => {
+        const de = ids.has(c.de.peca);
+        const para = ids.has(c.para.peca);
+        if (!de && !para) return c;
+        // Cabo com as duas pontas no grupo anda junto, com as dobras; senão perde a rota automática.
+        if (de && para && junto.length) return { ...c, pontos: c.pontos.map((q) => ({ x: q.x + dx, y: q.y + dy })) };
+        return c.rotaAuto ? { ...c, pontos: [], rotaAuto: false } : c;
+      }),
+      };
+      atual.current = r;
+      return r;
+    });
+  }, []);
+
+  // Redimensionar caixa: só desenho, sem proteções nem simulação.
+  const redimensionarQuadro = useCallback((id: string, pos: Posicao, w: number, h: number) => {
+    setProjeto((p) => {
+      const r = { ...p, pecas: p.pecas.map((x) => (x.id === id && x.tipo === 'quadro' ? { ...x, pos, w, h } : x)) };
+      atual.current = r;
+      return r;
+    });
   }, []);
 
   // Aplica o resultado do layout automático (posições das peças + dobras dos cabos).
@@ -198,6 +332,20 @@ export function useProjeto() {
     [mudar],
   );
 
+  // Liga/desliga (ou rearma) um lado do disjuntor de transferência. Se os dois ficarem ligados, as proteções desarmam ambos.
+  const alternarLado = useCallback(
+    (id: string, lado: LadoTransferencia) =>
+      mudar((p) => ({
+        ...p,
+        pecas: p.pecas.map((x) => {
+          if (x.id !== id || x.tipo !== 'disjuntor') return x;
+          if (lado === 'I') return { ...x, ligado: !x.ligado, desarmado: false };
+          return { ...x, II: { ligado: !x.II?.ligado, desarmado: false } };
+        }),
+      })),
+    [mudar],
+  );
+
   const alternarFase = useCallback(
     (f: Fase) => {
       const ent = atual.current.pecas.find((x) => x.tipo === 'entrada');
@@ -208,7 +356,7 @@ export function useProjeto() {
           x.tipo === 'entrada' ? { ...x, faltando: faltava ? x.faltando.filter((k) => k !== f) : [...x.faltando, f] } : x,
         ),
       }));
-      registrar([faltava ? `Fase ${f} voltou.` : `Simulando falta da fase ${f} vinda da rua.`]);
+      registrar([faltava ? { msg: `Fase ${f} voltou.` } : { msg: `Simulando falta da fase ${f} vinda da rua.`, ref: { tipo: 'fase', fase: f } }]);
     },
     [mudar, registrar],
   );
@@ -218,7 +366,7 @@ export function useProjeto() {
       const d = atual.current.pecas.find((x) => x.id === id);
       if (d?.tipo !== 'dr' || !d.ligado) return;
       mudar((p) => ({ ...p, pecas: p.pecas.map((x) => (x.id === id && x.tipo === 'dr' ? { ...x, ligado: false, desarmado: true } : x)) }));
-      registrar([`Teste do "${d.nome}": desarmou corretamente.`]);
+      registrar([{ msg: `Teste do "${d.nome}": desarmou corretamente.`, ref: { tipo: 'desarme', id } }]);
     },
     [mudar, registrar],
   );
@@ -227,7 +375,12 @@ export function useProjeto() {
     (ligado: boolean) =>
       mudar((p) => ({
         ...p,
-        pecas: p.pecas.map((x) => (x.tipo === 'disjuntor' || x.tipo === 'dr' ? { ...x, ligado, desarmado: false } : x)),
+        pecas: p.pecas.map((x) =>
+          // Transferência: "ligar tudo" liga só o lado I (os dois juntos desarmariam).
+          x.tipo === 'disjuntor' && x.transferencia ? { ...x, ligado, desarmado: false, II: { ligado: false, desarmado: false } }
+          : x.tipo === 'disjuntor' || x.tipo === 'dr' ? { ...x, ligado, desarmado: false }
+          : x,
+        ),
       })),
     [mudar],
   );
@@ -265,12 +418,14 @@ export function useProjeto() {
     atualizarPeca,
     removerPecas,
     moverPeca,
+    redimensionarQuadro,
     conectar,
     atualizarCabo,
     definirPontos,
     removerCabos,
     alternar,
     alternarFase,
+    alternarLado,
     testarDR,
     ligarTudo,
     aplicarSugestao,

@@ -59,7 +59,14 @@ export interface PecaDisjuntor extends PecaBase, Manobra {
   polos: Polos;
   curva: Curva;
   sintoma: Sintoma;
+  // Transferência manual: dois disjuntores lado a lado com intertravamento.
+  // Lado I = ligado/desarmado acima (bornes in:k/out:k); lado II = campo II (bornes inII:k/outII:k).
+  // Só um lado pode ficar ligado: se os dois ligarem, os dois desarmam.
+  transferencia?: boolean;
+  II?: Manobra;
 }
+
+export type LadoTransferencia = 'I' | 'II';
 
 export interface PecaDR extends PecaBase, Manobra {
   tipo: 'dr';
@@ -74,6 +81,15 @@ export interface PecaMedidor extends PecaBase {
   tipo: 'medidor';
   polos: 2 | 4; // 2 = 1 fase + N; 4 = até 3 fases + N
   correnteMax: number; // A: limite de medição direta
+}
+
+// Caixa de agrupamento (ex.: "Quadro quarto"): só visual, não tem bornes nem entra na simulação.
+// Fica atrás das outras peças; arrastar pelo título leva junto o que está dentro.
+export interface PecaQuadro extends PecaBase {
+  tipo: 'quadro';
+  w: number;
+  h: number;
+  cor: string; // hex
 }
 
 // Emenda cobre com cobre: todos os cabos ligados nela viram um ponto só.
@@ -100,7 +116,7 @@ export interface PecaCarga extends PecaBase {
   tensao: 127 | 220;
 }
 
-export type Peca = PecaEntrada | PecaDisjuntor | PecaDR | PecaMedidor | PecaEmenda | PecaBarramento | PecaCarga;
+export type Peca = PecaQuadro | PecaEntrada | PecaDisjuntor | PecaDR | PecaMedidor | PecaEmenda | PecaBarramento | PecaCarga;
 export type TipoPeca = Peca['tipo'];
 
 // Uma ponta de cabo: peça + borne (ex.: { peca: 'geral', borne: 'out:1' }).

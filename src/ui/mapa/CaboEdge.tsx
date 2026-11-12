@@ -45,7 +45,7 @@ function caminhoArredondado(pts: Posicao[], raio = 10): string {
 
 export function CaboEdge(props: EdgeProps) {
   const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected } = props;
-  const { projeto, sim, acoes, selecionar, foco, focoPeca, visiveis, bitolas } = useMapa();
+  const { projeto, sim, cargaCabos, acoes, selecionar, foco, focoPeca, visiveis, bitolas } = useMapa();
   const { screenToFlowPosition } = useReactFlow();
   const cabo = projeto.cabos.find((c) => c.id === id);
   if (!cabo) return null;
@@ -74,6 +74,9 @@ export function CaboEdge(props: EdgeProps) {
 
   const w = espessura(cabo.bitola);
   const vivo = sim.cabos[id] === 'fase';
+  // Bitola não aguenta a corrente: o fluxo fica "desgovernado" e o rótulo mostra a corrente.
+  const carga = cargaCabos[id];
+  const sobrecarga = !!carga?.sobrecarga;
 
   // Estado visual: filtrado (some), fora do foco (apagado) ou em foco (realçado).
   const filtrado = !visiveis.has(cabo.condutor);
@@ -81,7 +84,7 @@ export function CaboEdge(props: EdgeProps) {
   const classe = filtrado ? 'cabo-filtrado' : foco ? (emFoco ? 'cabo-foco' : 'cabo-fora-foco') : '';
   // Etiqueta completa só quando ajuda; cabo irregular sempre mostra pelo menos o ⚠.
   const etiqueta = !filtrado && (selected || emFoco || bitolas);
-  const soAlerta = !etiqueta && !filtrado && cabo.foraDoPadrao && !(foco && !emFoco);
+  const soAlerta = !etiqueta && !filtrado && (cabo.foraDoPadrao || sobrecarga) && !(foco && !emFoco);
 
   // Polo: se a peça em foco é uma das pontas deste cabo, descobre qual borne dela é (1, 2, N…),
   // qual fase está chegando nele e qual cor de polo usar.
@@ -138,7 +141,15 @@ export function CaboEdge(props: EdgeProps) {
       {polo && <path d={d} className="cabo-polo" stroke={polo.cor} strokeWidth={w + 7} />}
       <path d={d} className={`cabo-capa ${cabo.foraDoPadrao ? 'irregular' : ''}`} strokeWidth={w + 2.5} />
       <path d={d} className="cabo-cor" stroke={cabo.cor} strokeWidth={w} />
-      {vivo && <path d={d} className="cabo-fluxo" strokeWidth={Math.max(1.5, w - 2.5)} />}
+      {vivo && !sobrecarga && <path d={d} className="cabo-fluxo" strokeWidth={Math.max(1.5, w - 2.5)} />}
+      {sobrecarga && (
+        <>
+          <path d={d} className="cabo-quente" strokeWidth={w + 6} />
+          <path d={d} className="cabo-fluxo cabo-fluxo-louco a" strokeWidth={Math.max(1.5, w - 2.5)} />
+          <path d={d} className="cabo-fluxo cabo-fluxo-louco b" strokeWidth={Math.max(1.2, w - 3.5)} />
+          <title>{`Sobrecarga: ${carga.corrente.toFixed(1).replace('.', ',')} A num cabo que aguenta ~${carga.capacidade} A`}</title>
+        </>
+      )}
 
       {selected && (
         <g className="nodrag nopan">
@@ -199,17 +210,18 @@ export function CaboEdge(props: EdgeProps) {
       {(etiqueta || soAlerta) && (
         <EdgeLabelRenderer>
           <div
-            className={`cabo-rotulo nodrag nopan ${cabo.foraDoPadrao ? 'irregular' : ''} ${selected ? 'sel' : ''} ${soAlerta ? 'so-alerta' : ''} ${foco && !emFoco ? 'fora-foco' : ''}`}
+            className={`cabo-rotulo nodrag nopan ${cabo.foraDoPadrao ? 'irregular' : ''} ${sobrecarga ? 'sobrecarga' : ''} ${selected ? 'sel' : ''} ${soAlerta ? 'so-alerta' : ''} ${foco && !emFoco ? 'fora-foco' : ''}`}
             style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)` }}
             onClick={() => selecionar({ tipo: 'cabo', id })}
             title={cabo.notas || (cabo.foraDoPadrao ? 'Ligação fora do padrão. Clique pra editar' : 'Clique pra editar o cabo')}
           >
             {soAlerta ? (
-              '⚠'
+              sobrecarga ? `⚠ ${Math.round(carga.corrente)} A / ${carga.capacidade} A` : '⚠'
             ) : (
               <>
                 <span className="cabo-rotulo-cor" style={{ background: cabo.cor }} />
                 {String(cabo.bitola).replace('.', ',')}mm²{cabo.foraDoPadrao && ' ⚠'}
+                {sobrecarga && ` · ${Math.round(carga.corrente)} A / ${carga.capacidade} A`}
               </>
             )}
           </div>

@@ -1,5 +1,5 @@
 // Simulação: quem tem energia, quanto cada carga e cada disjuntor puxa, curtos e atuação das proteções.
-import { fornecimentoInfo } from './catalogo';
+import { BITOLAS, capacidadeFio, fornecimentoInfo } from './catalogo';
 import { bornesDaPeca, cargaFaseFase, chave, estaFechado, montarRede, rotuloPotencial, type Rede } from './rede';
 import type { Cabo, Fase, Peca, PecaCarga, PecaDisjuntor, PecaDR, PecaMedidor, Projeto } from './types';
 
@@ -97,11 +97,12 @@ export function simular(p: Projeto, faltando?: Fase[], fechado: (x: Peca) => boo
   const dispositivos: Simulacao['dispositivos'] = {};
   for (const x of p.pecas) {
     if (x.tipo !== 'disjuntor' && x.tipo !== 'dr') continue;
+    const passa = fechado(x);
     const bornes = bornesDaPeca(x, p);
     const entradaViva = bornes.some((b) => b.lado === 'topo' && rede.potencial(x.id, b.id).fases.size > 0);
-    const saidaViva = bornes.some((b) => b.lado === 'base' && rede.potencial(x.id, b.id).fases.size > 0) && fechado(x);
+    const saidaViva = bornes.some((b) => b.lado === 'base' && rede.potencial(x.id, b.id).fases.size > 0) && passa;
     let corrente = 0;
-    if (fechado(x)) {
+    if (passa) {
       const { rede: r2, porPolo } = gruposJusante(p, x, base);
       for (const polo of porPolo) {
         if (polo.borne.endsWith(':N')) continue;
@@ -156,14 +157,33 @@ export function simular(p: Projeto, faltando?: Fase[], fechado: (x: Peca) => boo
 // Pior caso: tudo ligado, nenhuma fase faltando.
 export const simularPiorCaso = (p: Projeto) => simular(p, [], (x) => x.tipo === 'disjuntor' || x.tipo === 'dr');
 
-export interface ResultadoProtecoes {
-  projeto: Projeto;
-  eventos: string[];
+// Evento de proteção. `peca` = quem desarmou; `curto` = curto sem disjuntor no caminho.
+// Servem pra interface tirar o aviso sozinha quando o problema some (rearmou, desfez o curto).
+export interface EventoProtecao {
+  msg: string;
+  peca?: string;
+  curto?: boolean;
 }
 
+export interface ResultadoProtecoes {
+  projeto: Projeto;
+  eventos: EventoProtecao[];
+}
+
+// Desarma a peça. Na transferência, desarma os lados que estavam ligados.
 const desarmar = (p: Projeto, id: string): Projeto => ({
   ...p,
-  pecas: p.pecas.map((x) => (x.id === id && (x.tipo === 'disjuntor' || x.tipo === 'dr') ? { ...x, ligado: false, desarmado: true } : x)),
+  pecas: p.pecas.map((x) => {
+    if (x.id !== id) return x;
+    if (x.tipo === 'disjuntor' && x.transferencia) {
+      return {
+        ...x,
+        ...(x.ligado ? { ligado: false, desarmado: true } : {}),
+        ...(x.II?.ligado ? { II: { ligado: false, desarmado: true } } : {}),
+      };
+    }
+    return x.tipo === 'disjuntor' || x.tipo === 'dr' ? { ...x, ligado: false, desarmado: true } : x;
+  }),
 });
 
 // Verifica a corrente diferencial de um DR: fase e neutro de cada carga precisam passar os dois por ele.
@@ -195,10 +215,18 @@ function drDesequilibrado(p: Projeto, d: PecaDR, sim: Simulacao): string | null 
 // Aplica as proteções depois de uma manobra, repetindo até estabilizar.
 export function aplicarProtecoes(entrada: Projeto): ResultadoProtecoes {
   let p = entrada;
-  const eventos: string[] = [];
+  const eventos: EventoProtecao[] = [];
   for (let volta = 0; volta < 20; volta++) {
+    // 0) Intertravamento: os dois lados da transferência ligados ao mesmo tempo → os dois desarmam.
+    const dupla = p.pecas.find((x): x is PecaDisjuntor => x.tipo === 'disjuntor' && !!x.transferencia && x.ligado && !!x.II?.ligado);
+    if (dupla) {
+      eventos.push({ msg: `"${dupla.nome}": os lados I e II foram ligados juntos e os dois desarmaram (intertravamento). Ligue só um lado.`, peca: dupla.id });
+      p = desarmar(p, dupla.id);
+      continue;
+    }
+
     const sim = simular(p);
-    const disj = p.pecas.filter((x): x is PecaDisjuntor => x.tipo === 'disjuntor' && x.ligado);
+    const disj = p.pecas.filter((x): x is PecaDisjuntor => x.tipo === 'disjuntor' && estaFechado(x));
     const ordem = [...disj.filter((x) => !x.geral), ...disj.filter((x) => x.geral)];
 
     // 1) Curto-circuito: cai o primeiro disjuntor (circuito antes do geral) encostado no ponto em curto.
@@ -206,11 +234,11 @@ export function aplicarProtecoes(entrada: Projeto): ResultadoProtecoes {
       const curto = sim.curtos[0];
       const alvo = ordem.find((x) => bornesDaPeca(x, p).some((b) => sim.rede.grupo(x.id, b.id) === curto.grupo));
       if (alvo) {
-        eventos.push(`Curto (${curto.desc}): "${alvo.nome}" desarmou.`);
+        eventos.push({ msg: `Curto (${curto.desc}): "${alvo.nome}" desarmou.`, peca: alvo.id });
         p = desarmar(p, alvo.id);
         continue;
       }
-      eventos.push(`Curto (${curto.desc}) sem disjuntor no caminho! Na vida real isso queima cabos ou o padrão.`);
+      eventos.push({ msg: `Curto (${curto.desc}) sem disjuntor no caminho! Na vida real isso queima cabos ou o padrão.`, curto: true });
       break;
     }
 
@@ -218,7 +246,7 @@ export function aplicarProtecoes(entrada: Projeto): ResultadoProtecoes {
     const sobrecarga = ordem.find((x) => (sim.dispositivos[x.id]?.corrente ?? 0) > x.corrente);
     if (sobrecarga) {
       const i = sim.dispositivos[sobrecarga.id].corrente;
-      eventos.push(`"${sobrecarga.nome}" desarmou: ${i.toFixed(1)} A passando num disjuntor de ${sobrecarga.corrente} A.`);
+      eventos.push({ msg: `"${sobrecarga.nome}" desarmou: ${i.toFixed(1)} A passando num disjuntor de ${sobrecarga.corrente} A.`, peca: sobrecarga.id });
       p = desarmar(p, sobrecarga.id);
       continue;
     }
@@ -229,7 +257,7 @@ export function aplicarProtecoes(entrada: Projeto): ResultadoProtecoes {
     for (const d of drs) {
       const motivo = drDesequilibrado(p, d, sim);
       if (motivo) {
-        eventos.push(`"${d.nome}" desarmou: ${motivo}.`);
+        eventos.push({ msg: `"${d.nome}" desarmou: ${motivo}.`, peca: d.id });
         p = desarmar(p, d.id);
         caiu = true;
         break;
@@ -258,3 +286,67 @@ export function cabosDoCircuito(p: Projeto, d: PecaDisjuntor): { fase: Cabo[]; n
 }
 
 export const chaveBorne = chave;
+
+// ---------- Corrente em cada cabo ----------
+// Pra cada cabo: tira ele da rede e vê quais cargas funcionando perdem a fase (ou o neutro).
+// A corrente dessas cargas é a que passa por ele. Vale pra qualquer trecho, do padrão até a carga,
+// então pega também cabo fino ANTES do geral ou de um disjuntor (verificação "pra trás").
+// Simplificação: cabos em paralelo (anel) não são divididos; tirar um deles não corta nada e ele fica com 0 A.
+export interface CargaCabo {
+  corrente: number;
+  capacidade: number; // A, NBR 5410 simplificada (2 condutores carregados, embutido)
+  sobrecarga: boolean;
+  bitolaMinima: number | null; // menor bitola que aguentaria (null = nem 35 mm² aguenta)
+}
+
+// Corrente de neutro de cargas fase-neutro em fases diferentes (defasadas 120°, fator de potência 1).
+const correnteNeutro = (i: Record<Fase, number>) =>
+  Math.sqrt(Math.max(0, i.A ** 2 + i.B ** 2 + i.C ** 2 - i.A * i.B - i.B * i.C - i.C * i.A));
+
+export function correntesDosCabos(p: Projeto, sim: Simulacao, fechado: (x: Peca) => boolean = estaFechado, faltando?: Fase[]): Record<string, CargaCabo> {
+  const entrada = p.pecas.find((x) => x.tipo === 'entrada');
+  const falt = faltando ?? (entrada?.tipo === 'entrada' ? entrada.faltando : []);
+  const cargas = p.pecas.filter((c): c is PecaCarga => c.tipo === 'carga' && !!sim.cargas[c.id]?.funciona);
+  const r: Record<string, CargaCabo> = {};
+  for (const cabo of p.cabos) {
+    const tipo = sim.cabos[cabo.id];
+    let corrente = 0;
+    if (cargas.length && (tipo === 'fase' || tipo === 'neutro')) {
+      const sem = montarRede({ ...p, cabos: p.cabos.filter((c) => c.id !== cabo.id) }, { fechado, faltando: falt });
+      if (tipo === 'fase') {
+        for (const c of cargas) {
+          const pontas = cargaFaseFase(c, p) ? ['L1', 'L2'] : ['L1'];
+          for (const b of pontas) if (sem.potencial(c.id, b).fases.size === 0) corrente += sim.cargas[c.id].corrente;
+        }
+      } else {
+        const porFase: Record<Fase, number> = { A: 0, B: 0, C: 0 };
+        for (const c of cargas) {
+          if (cargaFaseFase(c, p) || sem.potencial(c.id, 'N').neutro) continue;
+          const e = sim.cargas[c.id];
+          porFase[e.fases[0]] += e.corrente;
+        }
+        corrente = correnteNeutro(porFase);
+      }
+    }
+    const capacidade = capacidadeFio(cabo.bitola);
+    r[cabo.id] = {
+      corrente,
+      capacidade,
+      sobrecarga: corrente > capacidade + 0.05,
+      bitolaMinima: BITOLAS.find((b) => capacidadeFio(b) >= corrente) ?? null,
+    };
+  }
+  return r;
+}
+
+// Descrição curta de um cabo pra mensagens: "fase 6 mm² (Entrada da rua → Disjuntor geral)".
+export function descreverCabo(p: Projeto, c: Cabo): string {
+  const nome = (id: string) => p.pecas.find((x) => x.id === id)?.nome ?? '?';
+  return `${c.condutor} ${String(c.bitola).replace('.', ',')} mm² (${nome(c.de.peca)} → ${nome(c.para.peca)})`;
+}
+
+export function msgSobrecargaCabo(p: Projeto, c: Cabo, k: CargaCabo, quando = ''): string {
+  const f = (n: number) => n.toFixed(1).replace('.', ',');
+  const troca = k.bitolaMinima ? ` Precisa de pelo menos ${String(k.bitolaMinima).replace('.', ',')} mm².` : ' Nem 35 mm² aguenta: divida a carga.';
+  return `Cabo ${descreverCabo(p, c)} leva ${f(k.corrente)} A${quando} e aguenta ~${k.capacidade} A: vai esquentar.${troca}`;
+}
