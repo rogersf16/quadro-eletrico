@@ -19,7 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CONDUTORES_ROTULO, focoDe } from './foco';
 import { tamanhoPeca } from '../../core/layout';
 import { layoutAutomatico, type LadoPorta, type MedidaPeca } from '../../core/layoutAuto';
-import { montarRede } from '../../core/rede';
+import { bornesDaPeca, montarRede } from '../../core/rede';
 import { correntesDosCabos, detalheCurto, simular, simularPiorCaso } from '../../core/simulacao';
 import type { Condutor } from '../../core/types';
 import { chaveEletrica } from '../chave';
@@ -28,6 +28,7 @@ import type { Acoes, TipoNovaPeca } from '../useProjeto';
 import { tiposDeCabo } from './CaboEdge';
 import { MapaCtx, type Selecao } from './contexto';
 import { Faiscas, type Faisca } from './Faiscas';
+import { calcularFaixas, type TrechoCabo } from './faixas';
 import { tiposDeNo } from './nos';
 
 interface Props {
@@ -141,6 +142,32 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir, pedi
       })),
     [projeto.cabos, selecao, curto],
   );
+
+  // Faixas dos cabos automáticos: precisa das posições reais dos bornes (medidas pelo React Flow).
+  const faixas = useMemo(() => {
+    const lado = (pos: string) => pos as TrechoCabo['sp'];
+    const ponto = (peca: string, borne: string) => {
+      const n = rf.getInternalNode(peca);
+      const h = [...(n?.internals.handleBounds?.source ?? []), ...(n?.internals.handleBounds?.target ?? [])].find((b) => b.id === borne);
+      if (!n || !h) return null;
+      const { x, y } = n.internals.positionAbsolute;
+      // Mesmo ponto que o React Flow usa pra ponta do cabo: meio do lado do borne.
+      const px = h.position === 'left' ? h.x : h.position === 'right' ? h.x + h.width : h.x + h.width / 2;
+      const py = h.position === 'top' ? h.y : h.position === 'bottom' ? h.y + h.height : h.y + h.height / 2;
+      return { x: x + px, y: y + py, pos: lado(h.position) };
+    };
+    const trechos: TrechoCabo[] = [];
+    for (const c of projeto.cabos) {
+      if (c.pontos.length) continue;
+      const a = ponto(c.de.peca, c.de.borne);
+      const b = ponto(c.para.peca, c.para.borne);
+      const peca = projeto.pecas.find((x) => x.id === c.de.peca);
+      if (!a || !b || !peca) continue;
+      const fracaoDe = bornesDaPeca(peca, projeto).find((k) => k.id === c.de.borne)?.fracao ?? 0.5;
+      trechos.push({ id: c.id, grupo: cobre.grupo(c.de.peca, c.de.borne), sx: a.x, sy: a.y, tx: b.x, ty: b.y, sp: a.pos, tp: b.pos, fracaoDe });
+    }
+    return calcularFaixas(trechos);
+  }, [nodes, projeto.cabos, cobre]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Leva o mapa até as peças (aviso de curto clicado aqui ou no painel).
   const mostrarPecas = useCallback(
@@ -328,9 +355,10 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir, pedi
       focoPeca: alvo?.tipo === 'peca' ? alvo.id : null,
       visiveis,
       bitolas,
+      faixas,
       curto,
     }),
-    [projeto, sim, cargaCabos, niveis, acoes, onSelecionar, foco, alvo?.tipo, alvo?.id, visiveis, bitolas, curto], // eslint-disable-line react-hooks/exhaustive-deps
+    [projeto, sim, cargaCabos, niveis, acoes, onSelecionar, foco, alvo?.tipo, alvo?.id, visiveis, bitolas, faixas, curto], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   return (

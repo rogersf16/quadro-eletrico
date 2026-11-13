@@ -7,6 +7,7 @@ import { encaixar } from '../../core/layout';
 import { bornesDaPeca } from '../../core/rede';
 import type { Posicao } from '../../core/types';
 import { useMapa } from './contexto';
+import { AFASTAMENTO, alturaBase, alturaComFaixa, forma } from './faixas';
 
 const espessura = (bitola: number) => Math.min(12, Math.max(3, 2 + bitola * 0.55));
 
@@ -45,7 +46,7 @@ function caminhoArredondado(pts: Posicao[], raio = 10): string {
 
 export function CaboEdge(props: EdgeProps) {
   const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected } = props;
-  const { projeto, sim, cargaCabos, acoes, selecionar, foco, focoPeca, visiveis, bitolas, curto } = useMapa();
+  const { projeto, sim, cargaCabos, acoes, selecionar, foco, focoPeca, visiveis, bitolas, faixas, curto } = useMapa();
   const { screenToFlowPosition } = useReactFlow();
   const cabo = projeto.cabos.find((c) => c.id === id);
   if (!cabo) return null;
@@ -60,10 +61,13 @@ export function CaboEdge(props: EdgeProps) {
     // Sem dobras: degraus automáticos (sai reto do borne, vira 90°, chega reto no outro).
     // Cada polo vira numa altura diferente (faixa), senão os cabos de um bipolar ficam um em cima do outro.
     // O polo do lado pra onde o cabo vai vira primeiro, assim os cabos não se cruzam.
-    const faixa = (fracaoDe - 0.5) * 36 * (targetX >= sourceX ? -1 : 1);
-    const faixaY = (targetY - sourceY) * 0.5 + sourceY + faixa;
+    // Se outro cabo (de outro ponto elétrico) cairia na mesma altura, este vai pra outra faixa (ver faixas.ts).
+    const k = faixas[id] ?? 0;
+    const f = forma({ id, grupo: '', sx: sourceX, sy: sourceY, tx: targetX, ty: targetY, sp: sourcePosition, tp: targetPosition, fracaoDe });
+    const centerY = f?.tipo === 'Z' ? alturaComFaixa(f, k) : f ? undefined : alturaBase(sourceX, sourceY, targetX, targetY, fracaoDe);
+    const offset = f?.tipo === 'U' ? AFASTAMENTO + Math.abs(alturaComFaixa(f, k) - f.y) : AFASTAMENTO;
     [d, lx, ly] = getSmoothStepPath({
-      sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, borderRadius: 10, offset: 24, centerY: faixaY,
+      sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, borderRadius: 10, offset, centerY,
     });
   } else {
     d = caminhoArredondado(pts);

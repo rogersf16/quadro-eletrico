@@ -25,6 +25,8 @@ export interface MapaCtxValor {
   visiveis: Set<Condutor>;
   // true = etiqueta de bitola em todos os cabos; false = só no cabo em foco/selecionado.
   bitolas: boolean;
+  // Faixa de cada cabo com traçado automático (0 = padrão), pra cabos diferentes não se sobreporem.
+  faixas: Record<string, number>;
   // Pontos em curto com tudo ligado: cabos e bornes ("peca|borne") a destacar em vermelho.
   curto: { cabos: Set<string>; bornes: Set<string> };
 }
