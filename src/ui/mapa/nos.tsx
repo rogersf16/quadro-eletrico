@@ -26,9 +26,9 @@ function usePeca<T extends Peca>(id: string): T | undefined {
 
 // Um borne: ponto de conexão que acende conforme o potencial que chega nele.
 function BorneHandle({ peca, b, mostrarRotulo = true }: { peca: string; b: Borne; mostrarRotulo?: boolean }) {
-  const { sim } = useMapa();
+  const { sim, curto } = useMapa();
   const pt = sim.rede.potencial(peca, b.id);
-  const cls = pt.fases.size ? 'pot-fase' : pt.neutro ? 'pot-neutro' : pt.terra ? 'pot-terra' : '';
+  const cls = `${pt.fases.size ? 'pot-fase' : pt.neutro ? 'pot-neutro' : pt.terra ? 'pot-terra' : ''} ${curto.bornes.has(`${peca}|${b.id}`) ? 'em-curto' : ''}`;
   const horizontal = b.lado === 'esq' || b.lado === 'dir';
   const style = horizontal ? { top: `${b.fracao * 100}%` } : { left: `${b.fracao * 100}%` };
   return (

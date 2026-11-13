@@ -20,7 +20,7 @@ import { CONDUTORES_ROTULO, focoDe } from './foco';
 import { tamanhoPeca } from '../../core/layout';
 import { layoutAutomatico, type LadoPorta, type MedidaPeca } from '../../core/layoutAuto';
 import { montarRede } from '../../core/rede';
-import { correntesDosCabos, simular, simularPiorCaso } from '../../core/simulacao';
+import { correntesDosCabos, detalheCurto, simular, simularPiorCaso } from '../../core/simulacao';
 import type { Condutor } from '../../core/types';
 import { chaveEletrica } from '../chave';
 import { validarCarga, validarDisjuntor, piorNivel, type Nivel } from '../../core/validacao';
@@ -36,6 +36,8 @@ interface Props {
   onSelecionar: (s: Selecao | null) => void;
   expandido: boolean;
   onExpandir: () => void;
+  // Pedido de fora (ex.: clicou no aviso de curto no painel) pra levar o mapa até essas peças.
+  pedidoFoco?: { pecas: string[]; n: number } | null;
 }
 
 
@@ -47,7 +49,7 @@ export function Mapa(props: Props) {
   );
 }
 
-function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Props) {
+function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir, pedidoFoco }: Props) {
   const { projeto } = acoes;
   const rf = useReactFlow();
   const wrapper = useRef<HTMLDivElement>(null);
@@ -59,8 +61,18 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const cargaCabos = useMemo(() => correntesDosCabos(projeto, sim), [sim]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  const pior = useMemo(() => simularPiorCaso(projeto), [chave]);
+  // Curtos com tudo ligado: o que destacar no mapa e quais peças mostrar ao pedir "onde?".
+  const curtos = useMemo(
+    () => pior.curtos.map((c) => ({ desc: c.desc, ...detalheCurto(projeto, pior.rede, c.grupo) })),
+    [pior], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const curto = useMemo(
+    () => ({ cabos: new Set(curtos.flatMap((c) => c.cabos)), bornes: new Set(curtos.flatMap((c) => c.bornes)) }),
+    [curtos],
+  );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const niveis = useMemo(() => {
-    const pior = simularPiorCaso(projeto);
     const r: Record<string, Nivel> = {};
     for (const x of projeto.pecas) {
       if (x.tipo === 'disjuntor') r[x.id] = piorNivel(validarDisjuntor(projeto, x, pior));
@@ -124,9 +136,24 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
         target: c.para.peca,
         targetHandle: c.para.borne,
         selected: selecao?.tipo === 'cabo' && selecao.id === c.id,
+        // Cabo em curto vem pra frente: se estiver escondido atrás de outro, aparece.
+        ...(curto.cabos.has(c.id) ? { zIndex: 5 } : {}),
       })),
-    [projeto.cabos, selecao],
+    [projeto.cabos, selecao, curto],
   );
+
+  // Leva o mapa até as peças (aviso de curto clicado aqui ou no painel).
+  const mostrarPecas = useCallback(
+    (pecas: string[]) => {
+      if (!pecas.length) return;
+      wrapper.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      rf.fitView({ nodes: pecas.map((id) => ({ id })), padding: 0.25, maxZoom: 1.4, duration: 400 });
+    },
+    [rf],
+  );
+  useEffect(() => {
+    if (pedidoFoco) mostrarPecas(pedidoFoco.pecas);
+  }, [pedidoFoco, mostrarPecas]);
 
   // Ao começar a arrastar uma caixa, guarda o que está dentro dela (pelo centro de cada peça).
   // Guardar no início evita que a caixa "pesque" peças por onde passa.
@@ -301,8 +328,9 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
       focoPeca: alvo?.tipo === 'peca' ? alvo.id : null,
       visiveis,
       bitolas,
+      curto,
     }),
-    [projeto, sim, cargaCabos, niveis, acoes, onSelecionar, foco, alvo?.tipo, alvo?.id, visiveis, bitolas], // eslint-disable-line react-hooks/exhaustive-deps
+    [projeto, sim, cargaCabos, niveis, acoes, onSelecionar, foco, alvo?.tipo, alvo?.id, visiveis, bitolas, curto], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   return (
@@ -366,6 +394,15 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
         )}
 
         <div className="mapa-flow" ref={wrapper}>
+          {curtos.length > 0 && (
+            <div className="avisos-curto">
+              {curtos.map((c, i) => (
+                <button key={i} className="aviso-curto" onClick={() => mostrarPecas(c.pecas)} title="Mostrar no mapa onde está o curto">
+                  ⚡ Curto: {c.desc} · <u>mostrar onde</u>
+                </button>
+              ))}
+            </div>
+          )}
           <ReactFlow
             nodes={nodes}
             edges={edges}

@@ -154,6 +154,26 @@ export function simular(p: Projeto, faltando?: Fase[], fechado: (x: Peca) => boo
   return { rede, cargas, curtos, neutroNoTerra, correntePorFase, dispositivos, cabos, medidores };
 }
 
+// Onde está um curto: cabos, bornes ("peca|borne") e peças que fazem parte do ponto em curto.
+// Serve pra destacar no mapa, inclusive cabo escondido atrás de outro.
+export interface DetalheCurto {
+  cabos: string[];
+  bornes: string[];
+  pecas: string[];
+}
+export function detalheCurto(p: Projeto, rede: Rede, grupo: string): DetalheCurto {
+  const cabos = p.cabos.filter((c) => rede.grupo(c.de.peca, c.de.borne) === grupo).map((c) => c.id);
+  const bornes: string[] = [];
+  const pecas: string[] = [];
+  for (const x of p.pecas) {
+    const meus = bornesDaPeca(x, p).filter((b) => rede.grupo(x.id, b.id) === grupo);
+    if (!meus.length) continue;
+    pecas.push(x.id);
+    for (const b of meus) bornes.push(chave(x.id, b.id));
+  }
+  return { cabos, bornes, pecas };
+}
+
 // Pior caso: tudo ligado, nenhuma fase faltando.
 export const simularPiorCaso = (p: Projeto) => simular(p, [], (x) => x.tipo === 'disjuntor' || x.tipo === 'dr');
 

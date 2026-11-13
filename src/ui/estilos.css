@@ -460,3 +460,20 @@ input[type='checkbox'] { width: auto; }
 }
 @keyframes subir { from { transform: translateY(40%); opacity: 0.4; } }
 @media (prefers-reduced-motion: reduce) { .editor-lateral { animation: none; } }
+
+/* ---------- Curto-circuito: onde está ---------- */
+/* Contorno vermelho piscando nos cabos do ponto em curto (fica por baixo da cor do cabo). */
+.cabo-curto { fill: none; stroke: #ff2d1a; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; animation: curto-pisca 0.9s ease-in-out infinite alternate; }
+@keyframes curto-pisca { from { opacity: 0.35; } to { opacity: 0.95; } }
+.react-flow__handle.borne.em-curto { background: radial-gradient(circle at 35% 35%, #ffd0c9, #e0301a); border-color: #8a1206; box-shadow: 0 0 0 3px rgb(255 45 26 / 0.45), 0 0 10px #ff2d1a; animation: curto-pisca 0.9s ease-in-out infinite alternate; }
+/* Botão "mostrar onde" flutuando no canto do mapa */
+.mapa-flow { position: relative; }
+.avisos-curto { position: absolute; top: 8px; left: 8px; right: 8px; z-index: 6; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; pointer-events: none; }
+.aviso-curto { pointer-events: all; background: var(--erro); color: #fff; border-color: var(--erro); font-weight: 700; font-size: 0.82rem; padding: 0.3rem 0.7rem; box-shadow: 0 2px 8px rgb(0 0 0 / 0.25); text-align: left; }
+.aviso-curto:hover:not(:disabled) { border-color: #fff; }
+/* Aviso do painel que leva até o problema */
+.alerta-acao { padding: 0; }
+.alerta-acao button { all: unset; display: block; box-sizing: border-box; width: 100%; padding: 0.5rem 0.7rem; cursor: pointer; }
+.alerta-acao button:focus-visible { outline: 2px solid var(--sel); outline-offset: 2px; border-radius: 6px; }
+.alerta-acao u { font-weight: 600; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .cabo-curto, .react-flow__handle.borne.em-curto { animation: none; opacity: 0.9; } }

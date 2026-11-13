@@ -25,6 +25,8 @@ export interface MapaCtxValor {
   visiveis: Set<Condutor>;
   // true = etiqueta de bitola em todos os cabos; false = só no cabo em foco/selecionado.
   bitolas: boolean;
+  // Pontos em curto com tudo ligado: cabos e bornes ("peca|borne") a destacar em vermelho.
+  curto: { cabos: Set<string>; bornes: Set<string> };
 }
 
 export const MapaCtx = createContext<MapaCtxValor | null>(null);

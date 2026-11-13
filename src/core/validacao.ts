@@ -1,13 +1,14 @@
 // Validações de dimensionamento/ligação e dicas de diagnóstico por sintoma.
 import { BITOLAS, CORRENTES, capacidadeFio, fasesDoFornecimento, tipoCargaInfo } from './catalogo';
 import { bornesDaPeca, cargaFaseFase, estaFechado } from './rede';
-import { cabosDoCircuito, correntesDosCabos, gruposJusante, msgSobrecargaCabo, simularPiorCaso, type Simulacao } from './simulacao';
+import { cabosDoCircuito, correntesDosCabos, detalheCurto, gruposJusante, msgSobrecargaCabo, simularPiorCaso, type Simulacao } from './simulacao';
 import type { Peca, PecaCarga, PecaDisjuntor, PecaDR, Projeto } from './types';
 
 export type Nivel = 'erro' | 'aviso' | 'ok';
 export interface Alerta {
   nivel: Nivel;
   msg: string;
+  pecas?: string[]; // peças envolvidas, pra interface poder levar o mapa até elas
 }
 
 export const piorNivel = (alertas: Alerta[]): Nivel =>
@@ -125,7 +126,13 @@ export function validarCarga(p: Projeto, c: PecaCarga, pior: Simulacao = simular
 export function validarProjeto(p: Projeto): Alerta[] {
   const a: Alerta[] = [];
   const pior = simularPiorCaso(p);
-  for (const curto of pior.curtos) a.push({ nivel: 'erro', msg: `Curto-circuito com tudo ligado: ${curto.desc} no mesmo ponto.` });
+  for (const curto of pior.curtos) {
+    a.push({
+      nivel: 'erro',
+      msg: `Curto-circuito com tudo ligado: ${curto.desc} no mesmo ponto.`,
+      pecas: detalheCurto(p, pior.rede, curto.grupo).pecas,
+    });
+  }
   if (pior.neutroNoTerra) a.push({ nivel: 'aviso', msg: 'Neutro e terra estão unidos em algum ponto. Confira se isso é intencional (só deve ocorrer no padrão).' });
 
   const geral = p.pecas.find((x): x is PecaDisjuntor => x.tipo === 'disjuntor' && x.geral);

@@ -14,6 +14,8 @@ export function App() {
   const [selecao, setSelecao] = useState<Selecao | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [expandido, setExpandido] = useState(false);
+  const [pedidoFoco, setPedidoFoco] = useState<{ pecas: string[]; n: number } | null>(null);
+  const mostrar = useCallback((pecas: string[]) => setPedidoFoco((x) => ({ pecas, n: (x?.n ?? 0) + 1 })), []);
   const selecionar = useCallback((s: Selecao | null) => setSelecao(s), []);
 
   // Editor só aparece se o item selecionado ainda existe.
@@ -51,7 +53,7 @@ export function App() {
       <main className={`layout ${expandido ? 'expandido' : ''} ${existe ? 'com-editor' : ''}`}>
         <aside className="lateral">
           <PainelProjeto projeto={projeto} onChange={acoes.atualizarProjeto} />
-          <Resumo projeto={projeto} />
+          <Resumo projeto={projeto} onMostrar={mostrar} />
         </aside>
         <div className="principal">
           <Mapa
@@ -60,6 +62,7 @@ export function App() {
             onSelecionar={selecionar}
             expandido={expandido}
             onExpandir={() => setExpandido((x) => !x)}
+            pedidoFoco={pedidoFoco}
           />
         </div>
         {existe && (

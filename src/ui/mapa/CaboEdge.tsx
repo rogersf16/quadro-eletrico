@@ -45,7 +45,7 @@ function caminhoArredondado(pts: Posicao[], raio = 10): string {
 
 export function CaboEdge(props: EdgeProps) {
   const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected } = props;
-  const { projeto, sim, cargaCabos, acoes, selecionar, foco, focoPeca, visiveis, bitolas } = useMapa();
+  const { projeto, sim, cargaCabos, acoes, selecionar, foco, focoPeca, visiveis, bitolas, curto } = useMapa();
   const { screenToFlowPosition } = useReactFlow();
   const cabo = projeto.cabos.find((c) => c.id === id);
   if (!cabo) return null;
@@ -73,6 +73,8 @@ export function CaboEdge(props: EdgeProps) {
   }
 
   const w = espessura(cabo.bitola);
+  // Faz parte de um ponto em curto (com tudo ligado): contorno vermelho piscando, por cima de tudo.
+  const emCurto = curto.cabos.has(id);
   const vivo = sim.cabos[id] === 'fase';
   // Bitola não aguenta a corrente: o fluxo fica "desgovernado" e o rótulo mostra a corrente.
   const carga = cargaCabos[id];
@@ -81,7 +83,7 @@ export function CaboEdge(props: EdgeProps) {
   // Estado visual: filtrado (some), fora do foco (apagado) ou em foco (realçado).
   const filtrado = !visiveis.has(cabo.condutor);
   const emFoco = !!foco?.has(id);
-  const classe = filtrado ? 'cabo-filtrado' : foco ? (emFoco ? 'cabo-foco' : 'cabo-fora-foco') : '';
+  const classe = filtrado ? 'cabo-filtrado' : foco ? (emFoco ? 'cabo-foco' : emCurto ? '' : 'cabo-fora-foco') : '';
   // Etiqueta completa só quando ajuda; cabo irregular sempre mostra pelo menos o ⚠.
   const etiqueta = !filtrado && (selected || emFoco || bitolas);
   const soAlerta = !etiqueta && !filtrado && (cabo.foraDoPadrao || sobrecarga) && !(foco && !emFoco);
@@ -141,6 +143,11 @@ export function CaboEdge(props: EdgeProps) {
       {polo && <path d={d} className="cabo-polo" stroke={polo.cor} strokeWidth={w + 7} />}
       <path d={d} className={`cabo-capa ${cabo.foraDoPadrao ? 'irregular' : ''}`} strokeWidth={w + 2.5} />
       <path d={d} className="cabo-cor" stroke={cabo.cor} strokeWidth={w} />
+      {emCurto && (
+        <path d={d} className="cabo-curto" strokeWidth={w + 9}>
+          <title>Este cabo faz parte de um curto-circuito (com tudo ligado)</title>
+        </path>
+      )}
       {vivo && !sobrecarga && <path d={d} className="cabo-fluxo" strokeWidth={Math.max(1.5, w - 2.5)} />}
       {sobrecarga && (
         <>

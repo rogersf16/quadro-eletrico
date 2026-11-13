@@ -5,7 +5,7 @@ import { validarProjeto } from '../../core/validacao';
 import { useMemo } from 'react';
 import { chaveEletrica } from '../chave';
 
-export function Resumo({ projeto }: { projeto: Projeto }) {
+export function Resumo({ projeto, onMostrar }: { projeto: Projeto; onMostrar?: (pecas: string[]) => void }) {
   const chave = chaveEletrica(projeto);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const { agora, pior, alertas } = useMemo(
@@ -38,9 +38,17 @@ export function Resumo({ projeto }: { projeto: Projeto }) {
       })}
       {alertas.length > 0 && (
         <ul className="alertas">
-          {alertas.map((a, i) => (
-            <li key={i} className={`alerta alerta-${a.nivel}`}>{a.msg}</li>
-          ))}
+          {alertas.map((a, i) =>
+            a.pecas?.length && onMostrar ? (
+              <li key={i} className={`alerta alerta-${a.nivel} alerta-acao`}>
+                <button onClick={() => onMostrar(a.pecas!)} title="Mostrar no mapa">
+                  {a.msg} <u>Mostrar no mapa</u>
+                </button>
+              </li>
+            ) : (
+              <li key={i} className={`alerta alerta-${a.nivel}`}>{a.msg}</li>
+            ),
+          )}
         </ul>
       )}
     </section>
