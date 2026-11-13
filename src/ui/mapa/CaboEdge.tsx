@@ -44,6 +44,20 @@ function caminhoArredondado(pts: Posicao[], raio = 10): string {
   return `${d} L ${z.x} ${z.y}`;
 }
 
+// Cantos do traçado automático (o path do getSmoothStepPath): início, cada canto (ponto de controle
+// das curvas "Q") e fim. Assim os "+" ficam em cima do cabo que aparece, e não na reta entre os bornes.
+function cantos(d: string): Posicao[] {
+  const pts: Posicao[] = [];
+  for (const [, cmd, resto] of d.matchAll(/([MLQ])([^MLQ]*)/g)) {
+    const n = resto.match(/-?\d*\.?\d+(?:e-?\d+)?/gi)?.map(Number) ?? [];
+    if (n.length < 2) continue;
+    if (cmd === 'M' || cmd === 'Q') pts.push({ x: n[0], y: n[1] });
+  }
+  const n = d.match(/-?\d*\.?\d+(?:e-?\d+)?/gi)?.map(Number) ?? [];
+  if (n.length >= 2) pts.push({ x: n[n.length - 2], y: n[n.length - 1] });
+  return pts;
+}
+
 export function CaboEdge(props: EdgeProps) {
   const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected } = props;
   const { projeto, sim, cargaCabos, acoes, selecionar, foco, focoPeca, visiveis, bitolas, faixas, curto } = useMapa();
@@ -74,6 +88,27 @@ export function CaboEdge(props: EdgeProps) {
     const meio = Math.floor((pts.length - 1) / 2);
     lx = (pts[meio].x + pts[meio + 1].x) / 2;
     ly = (pts[meio].y + pts[meio + 1].y) / 2;
+  }
+
+  // Trechos onde dá pra criar dobra: sem dobras, segue o traçado automático; com dobras, a linha pelos pontos.
+  const vertices = cabo.pontos.length === 0 ? cantos(d) : pts;
+
+  // Selecionado, a etiqueta sai de cima do cabo (pro lado, se o trecho é vertical; pra cima, se horizontal).
+  // Ela é HTML e fica por cima do SVG: no meio do cabo, esconderia o "+" daquele trecho e roubaria o toque.
+  let posEtiqueta = 'translate(-50%, -50%)';
+  if (selected) {
+    // Põe a etiqueta ao lado do trecho mais comprido (o "+" dele fica no meio, livre).
+    let maior = -1;
+    for (let i = 0; i < vertices.length - 1; i++) {
+      const [a, b] = [vertices[i], vertices[i + 1]];
+      const L = Math.hypot(b.x - a.x, b.y - a.y);
+      if (L <= maior) continue;
+      maior = L;
+      lx = (a.x + b.x) / 2;
+      ly = (a.y + b.y) / 2;
+      const vertical = Math.abs(b.x - a.x) < Math.abs(b.y - a.y);
+      posEtiqueta = vertical ? 'translate(16px, -50%)' : 'translate(-50%, calc(-100% - 12px))';
+    }
   }
 
   const w = espessura(cabo.bitola);
@@ -164,22 +199,24 @@ export function CaboEdge(props: EdgeProps) {
 
       {selected && (
         <g className="nodrag nopan">
-          {pts.slice(0, -1).map((a, i) => {
-            const b = pts[i + 1];
-            const mx = (a.x + b.x) / 2;
-            const my = (a.y + b.y) / 2;
+          {vertices.slice(0, -1).map((a, i) => {
+            const b = vertices[i + 1];
+            if (Math.hypot(b.x - a.x, b.y - a.y) < 16) return null;
+            const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
             return (
               <g
                 key={`m${i}`}
                 className="dobra-nova"
-                transform={`translate(${mx} ${my})`}
+                transform={`translate(${m.x} ${m.y})`}
                 onPointerDown={(e) => {
-                  const novos = [...cabo.pontos];
-                  novos.splice(i, 0, { x: encaixar(mx), y: encaixar(my) });
+                  // Cabo automático: congela o traçado atual em dobras (sem os bornes) e acrescenta a nova.
+                  const novos = cabo.pontos.length === 0 ? vertices.slice(1, -1) : [...cabo.pontos];
+                  novos.splice(i, 0, { x: encaixar(m.x), y: encaixar(m.y) });
                   acoes.definirPontos(id, novos);
                   arrastar(i, novos)(e);
                 }}
               >
+                <circle className="dobra-alvo" r={14} />
                 <circle r={7} />
                 <path d="M -3.5 0 H 3.5 M 0 -3.5 V 3.5" />
                 <title>Arraste pra criar uma dobra</title>
@@ -222,7 +259,7 @@ export function CaboEdge(props: EdgeProps) {
         <EdgeLabelRenderer>
           <div
             className={`cabo-rotulo nodrag nopan ${cabo.foraDoPadrao ? 'irregular' : ''} ${sobrecarga ? 'sobrecarga' : ''} ${selected ? 'sel' : ''} ${soAlerta ? 'so-alerta' : ''} ${foco && !emFoco ? 'fora-foco' : ''}`}
-            style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)` }}
+            style={{ transform: `translate(${lx}px, ${ly}px) ${posEtiqueta}` }}
             onClick={() => selecionar({ tipo: 'cabo', id })}
             title={cabo.notas || (cabo.foraDoPadrao ? 'Ligação fora do padrão. Clique pra editar' : 'Clique pra editar o cabo')}
           >

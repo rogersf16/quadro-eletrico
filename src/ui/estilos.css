@@ -304,6 +304,7 @@ input[type='checkbox'] { width: auto; }
 .dobra { fill: #fff; stroke: var(--sel); stroke-width: 2.5; cursor: move; }
 .dobra-nova { cursor: copy; }
 .dobra-nova circle { fill: var(--sel); opacity: 0.85; }
+.dobra-nova circle.dobra-alvo { fill: transparent; opacity: 1; }
 .dobra-nova path { stroke: #fff; stroke-width: 1.8; fill: none; }
 .cabo-rotulo { position: absolute; pointer-events: all; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; padding: 1px 6px 1px 3px; border-radius: 99px; background: var(--painel); color: var(--texto); border: 1px solid var(--borda); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .cabo-rotulo.sel { border-color: var(--sel); box-shadow: 0 0 0 2px rgb(47 111 237 / 0.3); }

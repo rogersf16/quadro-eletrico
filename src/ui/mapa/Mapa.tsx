@@ -129,17 +129,22 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir, pedi
 
   const edges: Edge[] = useMemo(
     () =>
-      projeto.cabos.map((c) => ({
-        id: c.id,
-        type: 'cabo',
-        source: c.de.peca,
-        sourceHandle: c.de.borne,
-        target: c.para.peca,
-        targetHandle: c.para.borne,
-        selected: selecao?.tipo === 'cabo' && selecao.id === c.id,
-        // Cabo em curto vem pra frente: se estiver escondido atrás de outro, aparece.
-        ...(curto.cabos.has(c.id) ? { zIndex: 5 } : {}),
-      })),
+      projeto.cabos.map((c) => {
+        const sel = selecao?.tipo === 'cabo' && selecao.id === c.id;
+        return {
+          id: c.id,
+          type: 'cabo',
+          source: c.de.peca,
+          sourceHandle: c.de.borne,
+          target: c.para.peca,
+          targetHandle: c.para.borne,
+          selected: sel,
+          // Selecionado vai pra frente de tudo (até das peças): senão os "+" de dobra que caem atrás
+          // de um disjuntor ou barramento ficam escondidos e não dá pra clicar.
+          // Cabo em curto também vem pra frente: se estiver escondido atrás de outro, aparece.
+          ...(sel ? { zIndex: 1000 } : curto.cabos.has(c.id) ? { zIndex: 5 } : {}),
+        };
+      }),
     [projeto.cabos, selecao, curto],
   );
 
