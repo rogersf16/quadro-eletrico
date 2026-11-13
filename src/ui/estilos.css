@@ -410,3 +410,53 @@ input[type='checkbox'] { width: auto; }
 .transf-marca { text-align: center; margin-bottom: 24px; }
 .transf-lado.est-trip .alavancas { animation: tremer 0.35s ease-out; }
 @media (prefers-reduced-motion: reduce) { .transf-lado.est-trip .alavancas { animation: none; } }
+
+/* ---------- Toque e celular ---------- */
+.so-toque { display: none; }
+@media (hover: none) and (pointer: coarse) {
+  .so-mouse { display: none; }
+  .so-toque { display: block; }
+  /* Borne continua pequeno no desenho, mas a área de toque cresce pra caber o dedo. */
+  .react-flow__handle.borne::before { content: ''; position: absolute; inset: -11px; border-radius: 50%; }
+  .cabo-toque { stroke-width: 28; }
+  .react-flow__controls-button { width: 36px; height: 36px; }
+}
+
+@media (max-width: 760px) {
+  .app { padding: 0 10px calc(16px + env(safe-area-inset-bottom)); }
+  .cabecalho { padding: 8px 0; gap: 0.5rem; flex-wrap: nowrap; }
+  .marca-icone { font-size: 1.3rem; }
+  .marca { min-width: 0; flex: 1; }
+  .marca > div { min-width: 0; }
+  .marca h1, .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .marca h1 { font-size: 1rem; }
+  .cabecalho .acoes { flex: none; }
+  .so-largo { display: none; }
+  .sub { font-size: 0.75rem; }
+  .cabecalho .acoes { gap: 0.3rem; flex-wrap: nowrap; }
+  .cabecalho .acoes button { padding: 0.35rem 0.55rem; font-size: 0.82rem; white-space: nowrap; }
+
+  /* Mapa de ponta a ponta, ocupando quase a tela toda. */
+  .mapa-wrap { margin: 0 -10px; border-radius: 0; border-left: 0; border-right: 0; }
+  .mapa-flow, .mapa-wrap.expandido .mapa-flow { height: calc(100dvh - 150px); min-height: 360px; }
+  /* Barras numa linha só, roláveis de lado, em vez de empilhar 5 linhas de botões. */
+  .barra-ferramentas { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 6px 10px 2px; -webkit-overflow-scrolling: touch; }
+  .barra-ferramentas::-webkit-scrollbar { display: none; }
+  .barra-ferramentas > * { flex: none; }
+  .barra-ferramentas button { white-space: nowrap; }
+  .dica-mapa { padding: 2px 10px 6px; font-size: 0.72rem; }
+  .react-flow__minimap { display: none; }
+
+  /* Editor vira um painel que sobe de baixo, com o mapa visível em cima. */
+  .editor-lateral {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 50;
+    max-height: 52dvh; overflow: auto; overscroll-behavior: contain;
+    border-radius: 16px 16px 0 0; box-shadow: 0 -6px 24px rgb(0 0 0 / 0.25);
+    animation: subir 0.2s ease-out;
+  }
+  .editor-lateral > .painel { border-radius: 16px 16px 0 0; border-bottom: 0; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .editor-lateral > .painel::before { content: ''; display: block; width: 40px; height: 4px; border-radius: 2px; background: var(--borda); margin: -6px auto 10px; }
+  .editor-topo { position: sticky; top: 0; background: var(--painel); z-index: 1; padding-top: 4px; }
+}
+@keyframes subir { from { transform: translateY(40%); opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { .editor-lateral { animation: none; } }

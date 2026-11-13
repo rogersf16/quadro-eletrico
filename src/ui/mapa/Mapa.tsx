@@ -75,7 +75,10 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
   const cobre = useMemo(() => montarRede(projeto, { fechado: () => false, faltando: [] }), [chave]);
 
   // Foco: o que está sob o mouse tem prioridade; senão, o que está selecionado.
-  const [hover, setHover] = useState<Selecao | null>(null);
+  // No toque não existe "sair de cima" (mouseleave), então o hover só vale onde há mouse de verdade.
+  const temHover = useMemo(() => typeof matchMedia !== 'undefined' && matchMedia('(hover: hover)').matches, []);
+  const [hover, setHoverBruto] = useState<Selecao | null>(null);
+  const setHover = temHover ? setHoverBruto : () => {};
   const alvo = hover ?? selecao;
   const foco = useMemo(() => focoDe(projeto, cobre, alvo), [projeto.cabos, cobre, alvo?.tipo, alvo?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -255,6 +258,21 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
     }
   };
 
+  // No celular o editor sobe de baixo e cobre metade do mapa: se a peça tocada ficou atrás dele, desliza o mapa pra cima.
+  useEffect(() => {
+    if (selecao?.tipo !== 'peca' || !matchMedia('(max-width: 760px)').matches) return;
+    const n = rf.getInternalNode(selecao.id);
+    if (!n?.measured.width || !n.measured.height) return;
+    const p = n.internals.positionAbsolute;
+    const centro = rf.flowToScreenPosition({ x: p.x + n.measured.width / 2, y: p.y + n.measured.height / 2 });
+    const limite = window.innerHeight * 0.48 - 24; // topo do painel do editor (52dvh)
+    if (centro.y <= limite) return;
+    // Leva a peça pro meio da faixa visível entre o topo do mapa e o painel.
+    const topo = Math.max(0, wrapper.current?.getBoundingClientRect().top ?? 0);
+    const v = rf.getViewport();
+    rf.setViewport({ ...v, y: v.y - (centro.y - (topo + limite) / 2) }, { duration: 250 });
+  }, [selecao?.tipo, selecao?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const ctx = useMemo(
     () => ({
       projeto,
@@ -310,9 +328,13 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
             Bitolas
           </button>
         </div>
-        <p className="dica-mapa">
+        <p className="dica-mapa so-mouse">
           <b>Seguir o fio:</b> passe o mouse num cabo ou peça · <b>Ligar cabo:</b> arraste de um borne até outro ·{' '}
           <b>Editar:</b> clique · <b>Caminho:</b> com o cabo selecionado, arraste o <b>+</b> · <b>Apagar:</b> Delete
+        </p>
+        <p className="dica-mapa so-toque">
+          <b>Editar e seguir o fio:</b> toque · <b>Ligar cabo:</b> arraste de um borne até outro · <b>Zoom:</b> pinça ·{' '}
+          <b>Apagar:</b> botão Remover no editor
         </p>
 
         {acoes.eventos.length > 0 && (

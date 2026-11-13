@@ -20,8 +20,8 @@ export function Cabecalho({ nome, onNovo, onAbrir, onSalvar }: Props) {
       </div>
       <div className="acoes">
         <button onClick={onNovo}>Novo</button>
-        <button onClick={() => input.current?.click()}>Abrir .quadro</button>
-        <button className="primario" onClick={onSalvar}>Salvar arquivo</button>
+        <button onClick={() => input.current?.click()}>Abrir<span className="so-largo"> .quadro</span></button>
+        <button className="primario" onClick={onSalvar}>Salvar<span className="so-largo"> arquivo</span></button>
         <input
           ref={input}
           type="file"
