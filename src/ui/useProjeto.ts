@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { CORES_CONDUTOR, fasesDoFornecimento, fornecimentoInfo } from '../core/catalogo';
 import { organizar, tamanhoPeca, encaixar } from '../core/layout';
 import {
@@ -87,6 +87,11 @@ function aindaVale(ref: RefEvento, p: Projeto, sim: () => ReturnType<typeof simu
 
 const TEMPO_INFORMATIVO = 6000;
 
+// Desfazer: mudanças seguidas com menos que esse intervalo viram um passo só
+// (arrastar uma peça, digitar um nome, puxar uma dobra).
+const JANELA_DESFAZER = 500;
+const LIMITE_DESFAZER = 100;
+
 export type TipoNovaPeca = 'quadro' | 'disjuntor' | 'dr' | 'medidor' | 'carga' | 'emenda' | 'barramento-neutro' | 'barramento-terra';
 
 let contadorEventos = 0;
@@ -101,11 +106,52 @@ export function useProjeto() {
   const atual = useRef(projeto);
   atual.current = projeto;
 
+  // Histórico pra desfazer/refazer: fotos do projeto inteiro (são objetos imutáveis, então é barato).
+  const passado = useRef<Projeto[]>([]);
+  const futuro = useRef<Projeto[]>([]);
+  const anterior = useRef(projeto);
+  const ultimaMudanca = useRef(0);
+  const pularHistorico = useRef(false); // ligado quando a próxima troca de projeto não deve entrar no histórico
+  const [, setVersaoHistorico] = useState(0);
+
+  useEffect(() => {
+    if (projeto === anterior.current) return;
+    const antes = anterior.current;
+    anterior.current = projeto;
+    if (pularHistorico.current) {
+      pularHistorico.current = false;
+      return;
+    }
+    const agora = Date.now();
+    // Começo de uma nova leva de mudanças: guarda como estava antes dela.
+    if (agora - ultimaMudanca.current > JANELA_DESFAZER) {
+      passado.current = [...passado.current, antes].slice(-LIMITE_DESFAZER);
+      futuro.current = [];
+      setVersaoHistorico((v) => v + 1);
+    }
+    ultimaMudanca.current = agora;
+  }, [projeto]);
+
+  const irPara = useCallback((de: MutableRefObject<Projeto[]>, para: MutableRefObject<Projeto[]>) => {
+    const alvo = de.current[de.current.length - 1];
+    if (!alvo) return;
+    de.current = de.current.slice(0, -1);
+    para.current = [...para.current, atual.current];
+    pularHistorico.current = true;
+    ultimaMudanca.current = 0; // a próxima mudança começa um passo novo
+    atual.current = alvo;
+    setProjeto(alvo);
+    setVersaoHistorico((v) => v + 1);
+  }, []);
+  const desfazer = useCallback(() => irPara(passado, futuro), [irPara]);
+  const refazer = useCallback(() => irPara(futuro, passado), [irPara]);
+
   useEffect(() => {
     repositorio
       .carregar()
       .then((p) => {
         if (p) {
+          pularHistorico.current = true;
           atual.current = p;
           setProjeto(p);
         }
@@ -405,6 +451,10 @@ export function useProjeto() {
   return {
     projeto,
     eventos,
+    desfazer,
+    refazer,
+    podeDesfazer: passado.current.length > 0,
+    podeRefazer: futuro.current.length > 0,
     limparEventos: () => setEventos([]),
     substituir: (p: Projeto) => {
       atual.current = p;

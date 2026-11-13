@@ -224,6 +224,22 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
     onSelecionar({ tipo: 'peca', id });
   };
 
+  // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y (Cmd no Mac). Dentro de campo de texto fica o desfazer do próprio campo.
+  useEffect(() => {
+    const tecla = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const alvo = e.target as HTMLElement;
+      if (alvo.closest('input, textarea, select, [contenteditable="true"]')) return;
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) acoes.desfazer();
+      else if ((k === 'z' && e.shiftKey) || k === 'y') acoes.refazer();
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', tecla);
+    return () => window.removeEventListener('keydown', tecla);
+  }, [acoes.desfazer, acoes.refazer]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Organizar: mede as peças e bornes como estão desenhados e pede o layout ao ELK.
   const [organizando, setOrganizando] = useState(false);
   const organizar = async () => {
@@ -293,6 +309,9 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
     <MapaCtx.Provider value={ctx}>
       <section className={`mapa-wrap ${expandido ? 'expandido' : ''}`}>
         <div className="barra-ferramentas">
+          <button onClick={acoes.desfazer} disabled={!acoes.podeDesfazer} title="Desfazer (Ctrl+Z)" aria-label="Desfazer">↶</button>
+          <button onClick={acoes.refazer} disabled={!acoes.podeRefazer} title="Refazer (Ctrl+Shift+Z ou Ctrl+Y)" aria-label="Refazer">↷</button>
+          <span className="separador" />
           <span className="grupo-rotulo">Adicionar:</span>
           <button onClick={() => adicionar('quadro')} title="Caixa com nome pra agrupar peças (ex.: Quadro quarto)">Quadro</button>
           <button onClick={() => adicionar('disjuntor')}>Disjuntor</button>
@@ -330,7 +349,7 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir }: Pr
         </div>
         <p className="dica-mapa so-mouse">
           <b>Seguir o fio:</b> passe o mouse num cabo ou peça · <b>Ligar cabo:</b> arraste de um borne até outro ·{' '}
-          <b>Editar:</b> clique · <b>Caminho:</b> com o cabo selecionado, arraste o <b>+</b> · <b>Apagar:</b> Delete
+          <b>Editar:</b> clique · <b>Caminho:</b> com o cabo selecionado, arraste o <b>+</b> · <b>Apagar:</b> Delete · <b>Desfazer:</b> Ctrl+Z
         </p>
         <p className="dica-mapa so-toque">
           <b>Editar e seguir o fio:</b> toque · <b>Ligar cabo:</b> arraste de um borne até outro · <b>Zoom:</b> pinça ·{' '}
