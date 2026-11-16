@@ -224,20 +224,20 @@ export function CaboEdge(props: EdgeProps) {
             );
           })}
           {cabo.pontos.map((q, i) => (
-            <circle
+            <g
               key={`p${i}`}
               className="dobra"
-              cx={q.x}
-              cy={q.y}
-              r={7}
+              transform={`translate(${q.x} ${q.y})`}
               onPointerDown={arrastar(i, cabo.pontos)}
               onDoubleClick={(e) => {
                 e.stopPropagation();
                 acoes.definirPontos(id, cabo.pontos.filter((_, k) => k !== i));
               }}
             >
+              <circle className="dobra-alvo" r={14} />
+              <circle r={7} />
               <title>Arraste pra mover · duplo clique remove</title>
-            </circle>
+            </g>
           ))}
         </g>
       )}

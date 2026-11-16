@@ -168,6 +168,7 @@ input[type='checkbox'] { width: auto; }
   cursor: crosshair;
   transition: box-shadow 0.2s, background 0.2s, transform 0.1s;
 }
+.react-flow__handle.borne::before { content: ''; position: absolute; inset: -6px; border-radius: 50%; }
 .react-flow__handle.borne::after { content: ''; position: absolute; left: 2px; right: 2px; top: 5px; height: 2px; background: #5b616a; border-radius: 1px; transform: rotate(-30deg); pointer-events: none; }
 .react-flow__handle.borne:hover { box-shadow: 0 0 0 4px rgb(47 111 237 / 0.35); }
 .react-flow__handle.borne.pot-fase { background: radial-gradient(circle at 35% 35%, #fff4c9, #d39b19); box-shadow: 0 0 7px var(--vivo); border-color: #9a6d07; }
@@ -301,7 +302,12 @@ input[type='checkbox'] { width: auto; }
 .cabo-capa.irregular { stroke: #ff8a00; stroke-dasharray: 7 5; }
 .cabo-fluxo { stroke: var(--vivo-claro); stroke-dasharray: 6 14; animation: fluxo 0.9s linear infinite; opacity: 0.9; }
 @keyframes fluxo { to { stroke-dashoffset: -20; } }
-.dobra { fill: #fff; stroke: var(--sel); stroke-width: 2.5; cursor: move; }
+.dobra { cursor: move; }
+.dobra circle { fill: #fff; stroke: var(--sel); stroke-width: 2.5; }
+.dobra circle.dobra-alvo { fill: transparent; stroke: none; }
+/* O React Flow põe "pointer-events: visibleStroke" no cabo: sem isso, só o traço fino do "+" e o
+   anel da dobra respondiam ao mouse. Aqui o círculo inteiro (e a área em volta) vira alvo. */
+.dobra, .dobra *, .dobra-nova, .dobra-nova * { pointer-events: all; }
 .dobra-nova { cursor: copy; }
 .dobra-nova circle { fill: var(--sel); opacity: 0.85; }
 .dobra-nova circle.dobra-alvo { fill: transparent; opacity: 1; }
