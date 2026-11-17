@@ -3,6 +3,8 @@
 
 export type Fornecimento = 'mono127' | 'mono220' | 'bi' | 'tri';
 export type Fase = 'A' | 'B' | 'C';
+// Fase como aparece na rede: da rua (A, B, C) ou de um gerador ("g:<id do gerador>:<1..3>").
+export type FaseRede = Fase | `g:${string}:${number}`;
 export type Curva = 'B' | 'C' | 'D';
 export type Polos = 1 | 2 | 3;
 export type Condutor = 'fase' | 'neutro' | 'terra' | 'retorno';
@@ -116,7 +118,16 @@ export interface PecaCarga extends PecaBase {
   tensao: 127 | 220;
 }
 
-export type Peca = PecaQuadro | PecaEntrada | PecaDisjuntor | PecaDR | PecaMedidor | PecaEmenda | PecaBarramento | PecaCarga;
+// Gerador: segunda fonte de energia, independente da rua. As fases dele NÃO estão sincronizadas com as da rua:
+// se as duas fontes se encontram no mesmo ponto (paralelo), é curto. Ligado = motor funcionando e
+// disjuntor dele armado; desarmado = o disjuntor de saída do gerador caiu (sobrecarga ou curto).
+export interface PecaGerador extends PecaBase, Manobra {
+  tipo: 'gerador';
+  ligacao: Fornecimento; // como as bobinas estão ligadas (1 fase 127/220, 2 fases, 3 fases)
+  potencia: number; // VA nominais (fator de potência 1 na simulação)
+}
+
+export type Peca = PecaQuadro | PecaEntrada | PecaGerador | PecaDisjuntor | PecaDR | PecaMedidor | PecaEmenda | PecaBarramento | PecaCarga;
 export type TipoPeca = Peca['tipo'];
 
 // Uma ponta de cabo: peça + borne (ex.: { peca: 'geral', borne: 'out:1' }).

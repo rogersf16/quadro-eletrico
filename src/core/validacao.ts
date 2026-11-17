@@ -1,8 +1,11 @@
 // Validações de dimensionamento/ligação e dicas de diagnóstico por sintoma.
 import { BITOLAS, CORRENTES, capacidadeFio, fasesDoFornecimento, tipoCargaInfo } from './catalogo';
-import { bornesDaPeca, cargaFaseFase, estaFechado } from './rede';
-import { cabosDoCircuito, correntesDosCabos, detalheCurto, gruposJusante, msgSobrecargaCabo, simularPiorCaso, type Simulacao } from './simulacao';
-import type { Peca, PecaCarga, PecaDisjuntor, PecaDR, Projeto } from './types';
+import { bornesDaPeca, cargaFaseFase, estaFechado, rotuloFase } from './rede';
+import {
+  RISCOS_PARALELO, cabosDoCircuito, perigosDasCargas, correntesDosCabos, detalheCurto, gruposJusante, misturaDeFontes, msgSobrecargaCabo, simular, simularPiorCaso,
+  type Simulacao,
+} from './simulacao';
+import type { Peca, PecaCarga, PecaDisjuntor, PecaDR, PecaGerador, Projeto } from './types';
 
 export type Nivel = 'erro' | 'aviso' | 'ok';
 export interface Alerta {
@@ -101,8 +104,23 @@ export function validarDisjuntor(p: Projeto, d: PecaDisjuntor, pior?: Simulacao)
   return a;
 }
 
-export function validarCarga(p: Projeto, c: PecaCarga, pior: Simulacao = simularPiorCaso(p)): Alerta[] {
+export function validarCarga(p: Projeto, c: PecaCarga, pior: Simulacao = simularPiorCaso(p), perigos = perigosDasCargas(p)): Alerta[] {
   const a: Alerta[] = [];
+  const perigo = perigos[c.id];
+  if (perigo?.mistura) {
+    a.push({
+      nivel: 'erro',
+      msg: `Rua e gerador chegam nessa mesma carga. ${RISCOS_PARALELO} Cada carga tem que receber energia de uma fonte só, por um disjuntor de transferência.`,
+      pecas: [c.id],
+    });
+  }
+  if (perigo?.semDisjuntor.length) {
+    a.push({
+      nivel: 'erro',
+      msg: `Ligada direto na ${perigo.semDisjuntor.join(' e no ')}, sem disjuntor no caminho. Um curto ou sobrecarga aqui não derruba nada: o fio esquenta até derreter e pode pegar fogo. Passe a fase por um disjuntor.`,
+      pecas: [c.id],
+    });
+  }
   const e = pior.cargas[c.id];
   if (e && !e.funciona) a.push({ nivel: 'erro', msg: `Mesmo com tudo ligado essa carga não funciona: ${e.motivo}.` });
   const info = tipoCargaInfo(c.tipoCarga);
@@ -172,7 +190,57 @@ export function validarProjeto(p: Projeto): Alerta[] {
   for (const c of p.cabos) {
     if (c.foraDoPadrao) a.push({ nivel: 'aviso', msg: `Fora do padrão: cabo ${c.condutor} ${mm(c.bitola)}${c.notas ? ` (${c.notas})` : ''}.` });
   }
+  a.push(...validarGeradores(p));
   if (!p.dps) a.push({ nivel: 'aviso', msg: 'Sem DPS: a instalação fica sem proteção contra surtos (raios).' });
+  return a;
+}
+
+// Pior caso com os geradores funcionando: tudo ligado (na transferência vale o lado I, como no resto).
+const fechadoComGerador = (x: Peca) => x.tipo === 'disjuntor' || x.tipo === 'dr' || x.tipo === 'gerador';
+
+// Ligação do gerador: paralelo com a rua, energia voltando pra rua, capacidade e tensão.
+export function validarGeradores(p: Projeto): Alerta[] {
+  const geradores = p.pecas.filter((x): x is PecaGerador => x.tipo === 'gerador');
+  if (!geradores.length) return [];
+  const a: Alerta[] = [];
+  const comRua = simular(p, [], fechadoComGerador);
+  for (const curto of comRua.curtos.filter((c) => c.paralelo)) {
+    a.push({
+      nivel: 'erro',
+      msg: `Gerador em paralelo com a rua (${curto.desc} no mesmo ponto). As fases não são sincronizadas: é curto na hora que os dois ligam. Passe as fases por um disjuntor de transferência (rua no lado I, gerador no II).`,
+      pecas: detalheCurto(p, comRua.rede, curto.grupo).pecas,
+    });
+  }
+  for (const x of p.pecas) {
+    if (!misturaDeFontes(p, x, comRua.rede)) continue;
+    a.push({
+      nivel: 'erro',
+      msg: `"${x.nome}" recebe fase da rua e fase do gerador ao mesmo tempo. Vai desarmar quando o gerador funcionar. ${RISCOS_PARALELO}`,
+      pecas: [x.id, ...geradores.map((g) => g.id)],
+    });
+  }
+  // Sem a rua (apagão), com o gerador funcionando: a energia dele chega na entrada?
+  const semRua = simular(p, ['A', 'B', 'C'], fechadoComGerador);
+  for (const g of geradores) {
+    if (semRua.retorno.includes(g.id)) {
+      a.push({
+        nivel: 'erro',
+        msg: `"${g.nome}": num apagão a energia dele volta pra rua pelo padrão. Isso mata o eletricista da concessionária que está consertando a rede. Use transferência que corte rua e gerador.`,
+        pecas: [g.id],
+      });
+    }
+    const e = semRua.geradores[g.id];
+    if (e && e.carga > 1) {
+      const kw = (w: number) => (w / 1000).toFixed(1).replace('.', ',');
+      a.push({
+        nivel: 'aviso',
+        msg: `"${g.nome}" (${kw(g.potencia)} kVA) alimenta ${kw(e.potencia)} kW se tudo ligar junto${e.potencia <= g.potencia ? ` (fase mais carregada: ${e.correntes.map((i, k) => `${rotuloFase(`g:${g.id}:${k + 1}`)} ${fmt(i)} A`).join(', ')}; limite ${fmt(e.correnteNominal)} A por fase)` : ''}. Num apagão, ligue só o essencial.`,
+        pecas: [g.id],
+      });
+    }
+    const usado = p.cabos.some((c) => [c.de, c.para].some((k) => k.peca === g.id && k.borne.startsWith('L')));
+    if (!usado) a.push({ nivel: 'aviso', msg: `"${g.nome}" não está ligado em nada. Ligue as fases (L1…) no lado II de um disjuntor de transferência.`, pecas: [g.id] });
+  }
   return a;
 }
 

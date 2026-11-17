@@ -4,7 +4,7 @@
 import { EdgeLabelRenderer, getSmoothStepPath, Position, useReactFlow, type EdgeProps } from '@xyflow/react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { encaixar } from '../../core/layout';
-import { bornesDaPeca } from '../../core/rede';
+import { bornesDaPeca, rotuloFase } from '../../core/rede';
 import type { Posicao } from '../../core/types';
 import { useMapa } from './contexto';
 import { AFASTAMENTO, alturaBase, alturaComFaixa, forma } from './faixas';
@@ -137,7 +137,7 @@ export function CaboEdge(props: EdgeProps) {
     const b = bornes.find((x) => x.id === ponta.borne);
     if (b) {
       const doLado = bornes.filter((x) => x.lado === b.lado);
-      const fases = [...sim.rede.potencial(ponta.peca, ponta.borne).fases].sort();
+      const fases = [...sim.rede.potencial(ponta.peca, ponta.borne).fases].sort().map(rotuloFase);
       polo = {
         texto: `${b.rotulo || '•'}${fases.length && fases.join('+') !== b.rotulo ? ` · ${fases.join('+')}` : ''}`,
         cor: CORES_POLO[Math.max(0, doLado.indexOf(b)) % CORES_POLO.length],

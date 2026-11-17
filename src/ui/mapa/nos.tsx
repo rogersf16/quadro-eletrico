@@ -3,8 +3,8 @@
 import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react';
 import { CORES_CONDUTOR, fornecimentoInfo, tipoCargaInfo } from '../../core/catalogo';
 import { MODULO, barramentoVertical, tamanhoPeca } from '../../core/layout';
-import { bornesDaPeca, rotuloPotencial, type Borne, type Lado } from '../../core/rede';
-import type { Fase, Peca, PecaBarramento, PecaCarga, PecaDR, PecaDisjuntor, PecaEmenda, PecaEntrada, PecaMedidor, PecaQuadro } from '../../core/types';
+import { bornesDaPeca, ehFaseGerador, rotuloFase, rotuloPotencial, type Borne, type Lado } from '../../core/rede';
+import type { Fase, Peca, PecaBarramento, PecaCarga, PecaDR, PecaDisjuntor, PecaEmenda, PecaEntrada, PecaGerador, PecaMedidor, PecaQuadro } from '../../core/types';
 import { SeletorFornecimento } from '../components/SeletorFornecimento';
 import { useMapa } from './contexto';
 
@@ -290,6 +290,43 @@ export function NoEntrada({ id }: NodeProps) {
   );
 }
 
+// ---------- Gerador ----------
+export function NoGerador({ id }: NodeProps) {
+  const { sim, acoes } = useMapa();
+  const p = usePeca<PecaGerador>(id);
+  if (!p) return null;
+  const e = sim.geradores[id];
+  const info = fornecimentoInfo(p.ligacao);
+  const estado = p.desarmado ? 'trip' : p.ligado ? 'on' : 'off';
+  const uso = Math.min(1, e?.carga ?? 0);
+  const kva = (p.potencia / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+  return (
+    <div className={`gerador est-${estado}`}>
+      <div className="gerador-topo">
+        <span className="gerador-icone" aria-hidden>G</span>
+        <div className="gerador-txt">
+          <b>{p.nome}</b>
+          <span className="gerador-sub">{kva} kVA · {info.curto}</span>
+        </div>
+        <button
+          className="gerador-botao nodrag"
+          onClick={() => acoes.alternar(p.id)}
+          title={estado === 'trip' ? 'Disjuntor do gerador desarmou: clique pra rearmar e dar partida' : estado === 'on' ? 'Desligar o gerador' : 'Dar partida no gerador'}
+        >
+          {estado === 'on' ? 'ON' : estado === 'trip' ? 'TRIP' : 'OFF'}
+        </button>
+      </div>
+      <div className="gerador-uso" title="Quanto da capacidade do gerador está sendo usada">
+        <span className={`gerador-barra ${(e?.carga ?? 0) > 0.9 ? 'alta' : ''}`} style={{ width: `${uso * 100}%` }} />
+      </div>
+      <span className={`gerador-estado ${estado === 'on' ? 'vivo' : estado === 'trip' ? 'alerta' : ''}`}>
+        {estado === 'on' ? `⚡ ${fmtKW(e?.potencia ?? 0)} · ${Math.round((e?.carga ?? 0) * 100)}%` : estado === 'trip' ? 'desarmou' : 'parado'}
+      </span>
+      <Bornes peca={p} lados={['base']} />
+    </div>
+  );
+}
+
 // ---------- Emenda ----------
 export function NoEmenda({ id }: NodeProps) {
   const { projeto } = useMapa();
@@ -331,13 +368,25 @@ export function NoBarramento({ id }: NodeProps) {
 
 // ---------- Carga ----------
 export function NoCarga({ id }: NodeProps) {
-  const { sim, niveis } = useMapa();
+  const { sim, niveis, perigos } = useMapa();
   const p = usePeca<PecaCarga>(id);
   if (!p) return null;
   const e = sim.cargas[id];
   const info = tipoCargaInfo(p.tipoCarga);
+  const perigo = perigos[id];
+  const faixas = [
+    ...(perigo?.mistura ? [{ txt: 'RUA E GERADOR JUNTOS', dica: 'Rua e gerador chegam nessa mesma carga: curto entre as fontes, fio derretendo, arco elétrico e risco de choque. Use disjuntor de transferência.' }] : []),
+    ...(perigo?.semDisjuntor.length ? [{ txt: 'SEM DISJUNTOR', dica: `Ligada direto na ${perigo.semDisjuntor.join(' e no ')}: nada desarma num curto ou sobrecarga. Passe a fase por um disjuntor.` }] : []),
+  ];
   return (
-    <div className={`carga ${e?.funciona ? 'funciona' : ''}`}>
+    <div className={`carga ${e?.funciona ? 'funciona' : ''} ${faixas.length ? 'perigo' : ''}`}>
+      {faixas.length > 0 && (
+        <div className="carga-perigos" role="alert">
+          {faixas.map((f) => (
+            <span key={f.txt} className="carga-perigo" title={f.dica}>⚠ {f.txt}</span>
+          ))}
+        </div>
+      )}
       <Bornes peca={p} lados={['topo']} />
       <div className="carga-topo">
         <span className="carga-icone" aria-hidden>{info.icone}</span>
@@ -347,7 +396,9 @@ export function NoCarga({ id }: NodeProps) {
         {p.potencia} W · {p.tensao} V
       </span>
       <span className={`carga-estado ${e?.funciona ? 'vivo' : e && e.motivo !== 'sem energia' ? 'alerta' : ''}`}>
-        {e?.funciona ? `⚡ ${fmtA(e.corrente)} · fase ${e.fases.join('+')}` : (e?.motivo ?? 'sem energia')}
+        {e?.funciona
+          ? `⚡ ${fmtA(e.corrente)} · ${e.fases.some(ehFaseGerador) ? 'gerador ' : 'fase '}${e.fases.map(rotuloFase).join('+')}`
+          : (e?.motivo ?? 'sem energia')}
       </span>
       {niveis[id] && <span className={`led nivel-${niveis[id]}`} />}
     </div>
@@ -357,6 +408,7 @@ export function NoCarga({ id }: NodeProps) {
 export const tiposDeNo = {
   quadro: NoQuadro,
   entrada: NoEntrada,
+  gerador: NoGerador,
   disjuntor: NoDisjuntor,
   dr: NoDR,
   medidor: NoMedidor,

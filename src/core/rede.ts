@@ -1,6 +1,6 @@
 // Topologia elétrica: bornes de cada peça e quais bornes estão no mesmo ponto elétrico.
 import { fasesDoFornecimento, fornecimentoInfo } from './catalogo';
-import type { Fase, Peca, PecaCarga, Projeto } from './types';
+import type { Fase, FaseRede, Peca, PecaCarga, PecaGerador, Projeto } from './types';
 
 export type Lado = 'topo' | 'base' | 'centro-topo' | 'centro-base' | 'esq' | 'dir';
 
@@ -16,6 +16,25 @@ export interface Borne {
 export const cargaFaseFase = (c: PecaCarga, p: Projeto) =>
   c.tensao === 220 && fornecimentoInfo(p.fornecimento).fases >= 2;
 
+// ---------- Fases da rua × fases do gerador ----------
+// As fases do gerador têm identidade própria: mesmo "L1" do gerador não é a "A" da rua (não estão sincronizadas).
+export const faseGerador = (id: string, k: number): FaseRede => `g:${id}:${k}`;
+export const ehFaseGerador = (f: FaseRede): f is `g:${string}:${number}` => f.startsWith('g:');
+// De onde vem a fase: 'rua' ou o id do gerador.
+export const fonteDaFase = (f: FaseRede): string => (ehFaseGerador(f) ? f.slice(2, f.lastIndexOf(':')) : 'rua');
+// Posição da fase no sistema (0, 1, 2 = defasagem de 0°, 120°, 240°).
+export const indiceFase = (f: FaseRede): number => (ehFaseGerador(f) ? Number(f.slice(f.lastIndexOf(':') + 1)) - 1 : 'ABC'.indexOf(f));
+// Rótulo curto: "A", "B" pra rua; "G1", "G2" pro gerador.
+export const rotuloFase = (f: FaseRede): string => (ehFaseGerador(f) ? `G${indiceFase(f) + 1}` : f);
+export const fasesDoGerador = (g: PecaGerador) => Array.from({ length: fornecimentoInfo(g.ligacao).fases }, (_, i) => i + 1);
+
+// Tensão fase-neutro de uma fase, conforme a fonte.
+export function tensaoFaseNeutro(p: Projeto, f: FaseRede): 127 | 220 {
+  if (!ehFaseGerador(f)) return fornecimentoInfo(p.fornecimento).faseNeutro;
+  const g = p.pecas.find((x): x is PecaGerador => x.tipo === 'gerador' && x.id === fonteDaFase(f));
+  return fornecimentoInfo(g?.ligacao ?? p.fornecimento).faseNeutro;
+}
+
 const distribuir = (ids: { id: string; rotulo: string; sugestao?: Borne['sugestao'] }[], lado: Lado): Borne[] =>
   ids.map((b, i) => ({ ...b, lado, fracao: (i + 0.5) / ids.length }));
 
@@ -27,6 +46,15 @@ export function bornesDaPeca(peca: Peca, p: Projeto): Borne[] {
       return distribuir(
         [
           ...fasesDoFornecimento(p.fornecimento).map((f) => ({ id: f, rotulo: f, sugestao: 'fase' as const })),
+          { id: 'N', rotulo: 'N', sugestao: 'neutro' as const },
+          { id: 'T', rotulo: 'T', sugestao: 'terra' as const },
+        ],
+        'base',
+      );
+    case 'gerador':
+      return distribuir(
+        [
+          ...fasesDoGerador(peca).map((k) => ({ id: `L${k}`, rotulo: `L${k}`, sugestao: 'fase' as const })),
           { id: 'N', rotulo: 'N', sugestao: 'neutro' as const },
           { id: 'T', rotulo: 'T', sugestao: 'terra' as const },
         ],
@@ -100,7 +128,7 @@ function unidosSempre(peca: Peca, p: Projeto): string[] {
 export const chave = (peca: string, borne: string) => `${peca}|${borne}`;
 
 export interface Potencial {
-  fases: Set<Fase>;
+  fases: Set<FaseRede>;
   neutro: boolean;
   terra: boolean;
 }
@@ -113,7 +141,7 @@ export interface Rede {
 }
 
 export interface OpcoesRede {
-  fechado: (peca: Peca) => boolean; // disjuntor/DR está passando corrente?
+  fechado: (peca: Peca) => boolean; // disjuntor/DR está passando corrente? gerador está funcionando?
   faltando: Fase[];
   abrir?: string; // força uma peça aberta (usado pra descobrir o que está "a jusante" dela)
 }
@@ -164,6 +192,14 @@ export function montarRede(p: Projeto, op: OpcoesRede): Rede {
     potDe(achar(chave(entrada.id, 'N'))).neutro = true;
     potDe(achar(chave(entrada.id, 'T'))).terra = true;
   }
+  // Geradores funcionando: fases próprias e neutro. A carcaça (T) é sempre terra.
+  for (const g of p.pecas) {
+    if (g.tipo !== 'gerador') continue;
+    potDe(achar(chave(g.id, 'T'))).terra = true;
+    if (!op.fechado(g)) continue;
+    for (const k of fasesDoGerador(g)) potDe(achar(chave(g.id, `L${k}`))).fases.add(faseGerador(g.id, k));
+    potDe(achar(chave(g.id, 'N'))).neutro = true;
+  }
 
   const vazio: Potencial = { fases: new Set(), neutro: false, terra: false };
   return {
@@ -176,11 +212,12 @@ export function montarRede(p: Projeto, op: OpcoesRede): Rede {
 
 export function estaFechado(peca: Peca): boolean {
   if (peca.tipo === 'disjuntor') return peca.ligado || (!!peca.transferencia && !!peca.II?.ligado);
+  if (peca.tipo === 'gerador') return peca.ligado;
   return peca.tipo === 'dr' && peca.ligado;
 }
 
 export function rotuloPotencial(pt: Potencial): string {
-  const partes = [...pt.fases].sort().map((f) => `fase ${f}`);
+  const partes = [...pt.fases].sort().map((f) => (ehFaseGerador(f) ? `fase ${rotuloFase(f)} do gerador` : `fase ${f}`));
   if (pt.neutro) partes.push('neutro');
   if (pt.terra) partes.push('terra');
   return partes.join(' + ');

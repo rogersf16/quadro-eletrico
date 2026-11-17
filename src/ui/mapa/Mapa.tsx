@@ -20,7 +20,7 @@ import { CONDUTORES_ROTULO, focoDe } from './foco';
 import { tamanhoPeca } from '../../core/layout';
 import { layoutAutomatico, type LadoPorta, type MedidaPeca } from '../../core/layoutAuto';
 import { bornesDaPeca, montarRede } from '../../core/rede';
-import { correntesDosCabos, detalheCurto, simular, simularPiorCaso } from '../../core/simulacao';
+import { correntesDosCabos, detalheCurto, perigosDasCargas, simular, simularPiorCaso } from '../../core/simulacao';
 import type { Condutor } from '../../core/types';
 import { chaveEletrica } from '../chave';
 import { validarCarga, validarDisjuntor, piorNivel, type Nivel } from '../../core/validacao';
@@ -73,11 +73,13 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir, pedi
     [curtos],
   );
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  const perigos = useMemo(() => perigosDasCargas(projeto), [chave]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const niveis = useMemo(() => {
     const r: Record<string, Nivel> = {};
     for (const x of projeto.pecas) {
       if (x.tipo === 'disjuntor') r[x.id] = piorNivel(validarDisjuntor(projeto, x, pior));
-      if (x.tipo === 'carga') r[x.id] = piorNivel(validarCarga(projeto, x, pior));
+      if (x.tipo === 'carga') r[x.id] = piorNivel(validarCarga(projeto, x, pior, perigos));
     }
     return r;
   }, [chave]);
@@ -354,6 +356,7 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir, pedi
       sim,
       cargaCabos,
       niveis,
+      perigos,
       acoes,
       selecionar: onSelecionar,
       foco: foco?.cabos ?? null,
@@ -363,7 +366,7 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir, pedi
       faixas,
       curto,
     }),
-    [projeto, sim, cargaCabos, niveis, acoes, onSelecionar, foco, alvo?.tipo, alvo?.id, visiveis, bitolas, faixas, curto], // eslint-disable-line react-hooks/exhaustive-deps
+    [projeto, sim, cargaCabos, niveis, perigos, acoes, onSelecionar, foco, alvo?.tipo, alvo?.id, visiveis, bitolas, faixas, curto], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   return (
@@ -375,6 +378,7 @@ function MapaInterno({ acoes, selecao, onSelecionar, expandido, onExpandir, pedi
           <span className="separador" />
           <span className="grupo-rotulo">Adicionar:</span>
           <button onClick={() => adicionar('quadro')} title="Caixa com nome pra agrupar peças (ex.: Quadro quarto)">Quadro</button>
+          <button onClick={() => adicionar('gerador')} title="Segunda fonte de energia: ligue no lado II de um disjuntor de transferência">Gerador</button>
           <button onClick={() => adicionar('disjuntor')}>Disjuntor</button>
           <button onClick={() => adicionar('dr')}>DR</button>
           <button onClick={() => adicionar('medidor')} title="Medidor de energia DIN: mostra tensão e corrente, não protege">Medidor</button>

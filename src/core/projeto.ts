@@ -1,7 +1,7 @@
 // Criação, (des)serialização e fábrica de peças/cabos. Puro: roda no navegador ou num servidor Node.
 import { BITOLAS, CORES_CONDUTOR, capacidadeFio, condutorInfo, tipoCargaInfo } from './catalogo';
 import { migrarParaV3 } from './migracao';
-import type { Cabo, Condutor, Peca, PecaBarramento, PecaCarga, PecaDisjuntor, PecaDR, PecaEmenda, PecaMedidor, PecaQuadro, Ponta, Posicao, Projeto, TipoCarga } from './types';
+import type { Cabo, Condutor, Peca, PecaBarramento, PecaCarga, PecaDisjuntor, PecaDR, PecaEmenda, PecaGerador, PecaMedidor, PecaQuadro, Ponta, Posicao, Projeto, TipoCarga } from './types';
 import { ID_ENTRADA } from './types';
 
 export const VERSAO_FORMATO = 3;
@@ -25,6 +25,11 @@ export const novoDR = (pos: Posicao, m: Partial<PecaDR> = {}): PecaDR => ({
 
 export const novoMedidor = (pos: Posicao, m: Partial<PecaMedidor> = {}): PecaMedidor => ({
   id: novoId(), tipo: 'medidor', nome: 'Medidor', notas: '', pos, polos: 2, correnteMax: 63, ...m,
+});
+
+export const novoGerador = (pos: Posicao, m: Partial<PecaGerador> = {}): PecaGerador => ({
+  id: novoId(), tipo: 'gerador', nome: 'Gerador', notas: '', pos, ligacao: 'bi', potencia: 5000,
+  ligado: false, desarmado: false, ...m,
 });
 
 export const novoQuadro = (pos: Posicao, m: Partial<PecaQuadro> = {}): PecaQuadro => ({

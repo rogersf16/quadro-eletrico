@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 
 import { CORES_CONDUTOR, fasesDoFornecimento, fornecimentoInfo } from '../core/catalogo';
 import { organizar, tamanhoPeca, encaixar } from '../core/layout';
 import {
-  novaCarga, novaEmenda, novoBarramento, novoCabo, novoDR, novoDisjuntor, novoMedidor, novoQuadro, projetoVazio,
+  novaCarga, novaEmenda, novoBarramento, novoCabo, novoDR, novoDisjuntor, novoGerador, novoMedidor, novoQuadro, projetoVazio,
 } from '../core/projeto';
 import { borneInfo, limparCabos } from '../core/rede';
-import { aplicarProtecoes, cabosDoCircuito, correntesDosCabos, msgSobrecargaCabo, simular } from '../core/simulacao';
+import { RISCOS_PARALELO, aplicarProtecoes, cabosDoCircuito, correntesDosCabos, msgSobrecargaCabo, riscosRuaGerador, simular } from '../core/simulacao';
 import type { Cabo, Fase, LadoTransferencia, Peca, Ponta, Posicao, Projeto } from '../core/types';
 import { repositorio } from '../storage';
 import { chaveEletrica } from './chave';
@@ -31,6 +31,8 @@ export type RefEvento =
   | { tipo: 'cabo'; id: string } // cabo sobrecarregado
   | { tipo: 'desarme'; id: string } // disjuntor/DR que caiu
   | { tipo: 'curto' } // curto sem disjuntor no caminho
+  | { tipo: 'retorno'; id: string } // energia do gerador voltando pra rua
+  | { tipo: 'risco' } // ligação que junta rua e gerador (desarma quando o gerador funcionar)
   | { tipo: 'fase'; fase: Fase }; // falta de fase simulada
 
 export interface NovoEvento {
@@ -72,12 +74,16 @@ function aindaVale(ref: RefEvento, p: Projeto, sim: () => ReturnType<typeof simu
       const x = p.pecas.find((k) => k.id === ref.id);
       // Transferência: resolvido quando algum lado voltou a ligar ou quando nenhum lado está mais desarmado.
       if (x?.tipo === 'disjuntor' && x.transferencia) return (x.desarmado || !!x.II?.desarmado) && !x.ligado && !x.II?.ligado;
-      return !!x && (x.tipo === 'disjuntor' || x.tipo === 'dr') && x.desarmado;
+      return !!x && (x.tipo === 'disjuntor' || x.tipo === 'dr' || x.tipo === 'gerador') && x.desarmado;
     }
     case 'cabo':
       return !!cabos()[ref.id]?.sobrecarga;
     case 'curto':
       return sim().curtos.length > 0;
+    case 'retorno':
+      return sim().retorno.includes(ref.id);
+    case 'risco':
+      return riscosRuaGerador(p).length > 0;
     case 'fase': {
       const e = p.pecas.find((k) => k.tipo === 'entrada');
       return e?.tipo === 'entrada' && e.faltando.includes(ref.fase);
@@ -92,7 +98,7 @@ const TEMPO_INFORMATIVO = 6000;
 const JANELA_DESFAZER = 500;
 const LIMITE_DESFAZER = 100;
 
-export type TipoNovaPeca = 'quadro' | 'disjuntor' | 'dr' | 'medidor' | 'carga' | 'emenda' | 'barramento-neutro' | 'barramento-terra';
+export type TipoNovaPeca = 'quadro' | 'gerador' | 'disjuntor' | 'dr' | 'medidor' | 'carga' | 'emenda' | 'barramento-neutro' | 'barramento-terra';
 
 let contadorEventos = 0;
 
@@ -201,7 +207,21 @@ export function useProjeto() {
       const r = protecoes ? aplicarProtecoes(limpo) : { projeto: limpo, eventos: [] };
       atual.current = r.projeto;
       setProjeto(r.projeto);
+      // Gerador que PASSOU a jogar energia na rua (apagão + gerador sem transferência).
+      const retornoAntes = new Set(simular(antes).retorno);
+      const retorno = simular(r.projeto).retorno.filter((id) => !retornoAntes.has(id));
+      // Ligação nova que junta rua e gerador: avisa já, mesmo com o gerador parado (com ele ligado, as proteções já atuaram).
+      const riscosAntes = new Set(riscosRuaGerador(antes));
+      const riscosNovos = riscosRuaGerador(limpo).filter((x) => !riscosAntes.has(x));
+      const jaAtuou = r.eventos.some((e) => /gerador/.test(e.msg));
       registrar([
+        ...(riscosNovos.length && !jaAtuou
+          ? [{ msg: `Cuidado, ligação perigosa (${riscosNovos.join('; ')}): quando o gerador funcionar, o disjuntor vai desarmar. ${RISCOS_PARALELO} Use disjuntor de transferência.`, ref: { tipo: 'risco' as const } }]
+          : []),
+        ...retorno.map((id) => ({
+          msg: `Perigo: a energia de "${r.projeto.pecas.find((x) => x.id === id)?.nome}" está voltando pra rua pelo padrão. Quem estiver mexendo na rede da concessionária leva choque. Use chave de transferência.`,
+          ref: { tipo: 'retorno' as const, id },
+        })),
         ...r.eventos.map((e) => ({ msg: e.msg, ref: e.peca ? { tipo: 'desarme' as const, id: e.peca } : e.curto ? { tipo: 'curto' as const } : undefined })),
         ...avisosDeCabo(antes, r.projeto),
       ]);
@@ -236,6 +256,7 @@ export function useProjeto() {
         tipo === 'quadro' ? novoQuadro(pos, { nome: `Quadro ${n('quadro')}` })
         : tipo === 'disjuntor' ? novoDisjuntor(pos, { nome: `Circuito ${n('disjuntor')}` })
         : tipo === 'dr' ? novoDR(pos, { nome: `DR ${n('dr')}`, polos: info.fases > 1 ? 4 : 2 })
+        : tipo === 'gerador' ? novoGerador(pos, { nome: n('gerador') > 1 ? `Gerador ${n('gerador')}` : 'Gerador', ligacao: p.fornecimento })
         : tipo === 'medidor' ? novoMedidor(pos, { nome: `Medidor ${n('medidor')}`, polos: info.fases > 1 ? 4 : 2 })
         : tipo === 'carga' ? novaCarga(pos, 'tomada', { tensao: info.faseNeutro })
         : tipo === 'emenda' ? novaEmenda(pos, { nome: `Emenda ${n('emenda')}` })
@@ -372,7 +393,7 @@ export function useProjeto() {
       mudar((p) => ({
         ...p,
         pecas: p.pecas.map((x) =>
-          x.id === id && (x.tipo === 'disjuntor' || x.tipo === 'dr') ? { ...x, ligado: !x.ligado, desarmado: false } : x,
+          x.id === id && (x.tipo === 'disjuntor' || x.tipo === 'dr' || x.tipo === 'gerador') ? { ...x, ligado: !x.ligado, desarmado: false } : x,
         ),
       })),
     [mudar],

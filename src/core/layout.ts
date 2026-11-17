@@ -13,6 +13,8 @@ export function tamanhoPeca(p: Peca): { w: number; h: number } {
       return { w: p.w, h: p.h };
     case 'entrada':
       return { w: 232, h: 136 };
+    case 'gerador':
+      return { w: 232, h: 150 };
     // Corpo (polos × módulo) + etiqueta na lateral (6 de vão + 96 de largura).
     case 'disjuntor':
       // Transferência = dois disjuntores lado a lado.

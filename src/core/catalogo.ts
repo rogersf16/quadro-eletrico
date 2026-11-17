@@ -6,6 +6,9 @@ export const CORRENTES = [2, 4, 6, 10, 13, 16, 20, 25, 32, 40, 50, 63, 70, 80, 1
 // Correntes nominais comerciais de DR (interruptor diferencial).
 export const CORRENTES_DR = [25, 40, 63, 80, 100];
 
+// Potências comerciais de geradores (VA). Portáteis a gasolina vão até ~10 kVA; acima disso, diesel.
+export const POTENCIAS_GERADOR = [1000, 2500, 3500, 5000, 6500, 8000, 10000, 12000, 15000, 20000, 30000];
+
 // Limites de medição direta comuns de multimedidores DIN.
 export const CORRENTES_MEDIDOR = [40, 63, 80, 100];
 

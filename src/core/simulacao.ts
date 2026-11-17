@@ -1,12 +1,15 @@
 // Simulação: quem tem energia, quanto cada carga e cada disjuntor puxa, curtos e atuação das proteções.
 import { BITOLAS, capacidadeFio, fornecimentoInfo } from './catalogo';
-import { bornesDaPeca, cargaFaseFase, chave, estaFechado, montarRede, rotuloPotencial, type Rede } from './rede';
-import type { Cabo, Fase, Peca, PecaCarga, PecaDisjuntor, PecaDR, PecaMedidor, Projeto } from './types';
+import {
+  bornesDaPeca, cargaFaseFase, chave, ehFaseGerador, estaFechado, fasesDoGerador, fonteDaFase, indiceFase, montarRede,
+  rotuloFase, rotuloPotencial, tensaoFaseNeutro, type Rede,
+} from './rede';
+import type { Cabo, Fase, FaseRede, Peca, PecaCarga, PecaDisjuntor, PecaDR, PecaGerador, PecaMedidor, Projeto } from './types';
 
 export interface EstadoCarga {
   funciona: boolean;
   motivo: string; // explicação curta (ex.: "sem neutro")
-  fases: Fase[];
+  fases: FaseRede[];
   tensao: number;
   corrente: number; // A (0 se não funciona)
 }
@@ -14,6 +17,15 @@ export interface EstadoCarga {
 export interface Curto {
   grupo: string;
   desc: string;
+  paralelo: boolean; // fases de fontes diferentes (rua × gerador) no mesmo ponto
+}
+
+// O que um gerador está entregando agora.
+export interface EstadoGerador {
+  potencia: number; // W das cargas funcionando alimentadas por ele
+  correntes: number[]; // A em cada fase (L1, L2, L3)
+  correnteNominal: number; // A por fase que ele aguenta (potência ÷ fases ÷ tensão F-N)
+  carga: number; // fração da capacidade usada (1 = 100%), pior entre potência total e fase mais carregada
 }
 
 export interface Simulacao {
@@ -26,18 +38,20 @@ export interface Simulacao {
   dispositivos: Record<string, { corrente: number; entrada: boolean; saida: boolean }>;
   cabos: Record<string, 'fase' | 'neutro' | 'terra' | null>; // potencial em cada cabo
   medidores: Record<string, LeituraMedidor>;
+  geradores: Record<string, EstadoGerador>;
+  retorno: string[]; // geradores cuja energia chega nos bornes da entrada (volta pra rua)
 }
 
 // O que o display de um medidor mostra.
 export interface LeituraMedidor {
-  fases: { polo: string; fase: Fase | null; tensao: number; corrente: number }[];
+  fases: { polo: string; fase: string | null; tensao: number; corrente: number }[]; // fase = rótulo (A, B, G1…)
   potencia: number; // W, soma das cargas funcionando depois dele
 }
 
 const fasesOf = (rede: Rede, peca: string, borne: string) => [...rede.potencial(peca, borne).fases];
 
 function estadoCarga(c: PecaCarga, p: Projeto, rede: Rede): EstadoCarga {
-  const nada = (motivo: string, fases: Fase[] = []): EstadoCarga => ({ funciona: false, motivo, fases, tensao: 0, corrente: 0 });
+  const nada = (motivo: string, fases: FaseRede[] = []): EstadoCarga => ({ funciona: false, motivo, fases, tensao: 0, corrente: 0 });
   const f1 = fasesOf(rede, c.id, 'L1');
   if (f1.length > 1) return nada('curto entre fases');
   if (cargaFaseFase(c, p)) {
@@ -45,13 +59,18 @@ function estadoCarga(c: PecaCarga, p: Projeto, rede: Rede): EstadoCarga {
     if (!f1.length && !f2.length) return nada('sem energia');
     if (!f1.length || !f2.length) return nada('só uma fase chegando', [...f1, ...f2]);
     if (f1[0] === f2[0]) return nada('as duas pontas na mesma fase', f1);
+    if (fonteDaFase(f1[0]) !== fonteDaFase(f2[0])) return nada('uma fase da rua e outra do gerador', [f1[0], f2[0]]);
     return { funciona: true, motivo: '220 V', fases: [f1[0], f2[0]], tensao: 220, corrente: c.potencia / 220 };
   }
   const n = rede.potencial(c.id, 'N');
   if (!f1.length) return nada(n.neutro ? 'sem fase' : 'sem energia');
   if (n.fases.size) return nada('neutro com fase (curto?)', f1);
   if (!n.neutro) return nada('sem neutro', f1);
-  const v = fornecimentoInfo(p.fornecimento).faseNeutro;
+  const v = tensaoFaseNeutro(p, f1[0]);
+  // Gerador com tensão diferente do aparelho (ex.: gerador 220 V num aparelho 127 V).
+  if (ehFaseGerador(f1[0]) && v !== c.tensao) {
+    return nada(v > c.tensao ? `${v} V do gerador num aparelho de ${c.tensao} V: queima!` : `só ${v} V do gerador, aparelho é de ${c.tensao} V`, f1);
+  }
   return { funciona: true, motivo: `${v} V`, fases: f1, tensao: v, corrente: c.potencia / c.tensao };
 }
 
@@ -82,7 +101,7 @@ export function simular(p: Projeto, faltando?: Fase[], fechado: (x: Peca) => boo
     if (x.tipo !== 'carga') continue;
     const e = estadoCarga(x, p, rede);
     cargas[x.id] = e;
-    if (e.funciona) for (const f of e.fases) correntePorFase[f] += e.corrente;
+    if (e.funciona) for (const f of e.fases) if (!ehFaseGerador(f)) correntePorFase[f] += e.corrente;
   }
 
   const curtos: Curto[] = [];
@@ -90,7 +109,8 @@ export function simular(p: Projeto, faltando?: Fase[], fechado: (x: Peca) => boo
   for (const g of rede.grupos()) {
     const pt = rede.potencialDoGrupo(g);
     if (pt.fases.size > 1 || (pt.fases.size === 1 && (pt.neutro || pt.terra))) {
-      curtos.push({ grupo: g, desc: rotuloPotencial(pt) });
+      const paralelo = new Set([...pt.fases].map(fonteDaFase)).size > 1;
+      curtos.push({ grupo: g, desc: rotuloPotencial(pt), paralelo });
     } else if (pt.neutro && pt.terra) neutroNoTerra = true;
   }
 
@@ -119,7 +139,6 @@ export function simular(p: Projeto, faltando?: Fase[], fechado: (x: Peca) => boo
   }
 
   const medidores: Simulacao['medidores'] = {};
-  const vFN = fornecimentoInfo(p.fornecimento).faseNeutro;
   for (const x of p.pecas) {
     if (x.tipo !== 'medidor') continue;
     const { rede: r2, porPolo } = gruposJusante(p, x, base);
@@ -135,7 +154,7 @@ export function simular(p: Projeto, faltando?: Fase[], fechado: (x: Peca) => boo
         const pontas = cargaFaseFase(c, p) ? ['L1', 'L2'] : ['L1'];
         if (pontas.some((b) => r2.grupo(c.id, b) === g)) corrente += cargas[c.id].corrente;
       }
-      return { polo, fase, tensao: fase && temNeutro ? vFN : 0, corrente };
+      return { polo, fase: fase && rotuloFase(fase), tensao: fase && temNeutro ? tensaoFaseNeutro(p, fase) : 0, corrente };
     });
     let potencia = 0;
     for (const c of p.pecas) {
@@ -151,7 +170,36 @@ export function simular(p: Projeto, faltando?: Fase[], fechado: (x: Peca) => boo
     cabos[c.id] = pt.fases.size ? 'fase' : pt.neutro ? 'neutro' : pt.terra ? 'terra' : null;
   }
 
-  return { rede, cargas, curtos, neutroNoTerra, correntePorFase, dispositivos, cabos, medidores };
+  const geradores: Simulacao['geradores'] = {};
+  for (const g of p.pecas) {
+    if (g.tipo !== 'gerador') continue;
+    const n = fasesDoGerador(g).length;
+    const correntes = Array.from({ length: n }, () => 0);
+    let potencia = 0;
+    for (const c of p.pecas) {
+      const e = cargas[c.id];
+      if (c.tipo !== 'carga' || !e?.funciona) continue;
+      const minhas = e.fases.filter((f) => fonteDaFase(f) === g.id);
+      if (!minhas.length) continue;
+      potencia += c.potencia;
+      for (const f of minhas) correntes[indiceFase(f)] += e.corrente;
+    }
+    const correnteNominal = g.potencia / n / fornecimentoInfo(g.ligacao).faseNeutro;
+    const carga = g.potencia > 0 ? Math.max(potencia / g.potencia, ...correntes.map((i) => i / correnteNominal)) : 0;
+    geradores[g.id] = { potencia, correntes, correnteNominal, carga };
+  }
+
+  // Energia do gerador chegando nos bornes da entrada sem a rua ali: volta pela rede da concessionária.
+  const retorno = new Set<string>();
+  if (entrada) {
+    for (const b of bornesDaPeca(entrada, p)) {
+      const fs = [...rede.potencial(entrada.id, b.id).fases];
+      if (fs.some((f) => !ehFaseGerador(f))) continue;
+      for (const f of fs) retorno.add(fonteDaFase(f));
+    }
+  }
+
+  return { rede, cargas, curtos, neutroNoTerra, correntePorFase, dispositivos, cabos, medidores, geradores, retorno: [...retorno] };
 }
 
 // Onde está um curto: cabos, bornes ("peca|borne") e peças que fazem parte do ponto em curto.
@@ -190,6 +238,75 @@ export interface ResultadoProtecoes {
   eventos: EventoProtecao[];
 }
 
+// O que acontece de verdade quando rua e gerador se encontram.
+export const RISCOS_PARALELO =
+  'Na vida real isso é muito perigoso: as fontes não estão sincronizadas, então passa uma corrente de curto enorme entre a rua e o gerador. O fio derrete e pode pegar fogo, o disjuntor pode explodir com arco elétrico (queimadura e cegueira), o gerador queima e a energia pode voltar pra rua e dar choque em quem estiver trabalhando na rede.';
+
+const descreverFase = (f: FaseRede) => (ehFaseGerador(f) ? `a fase ${rotuloFase(f)} do gerador` : `a fase ${f} da rua`);
+
+// Fases de fontes diferentes (rua × gerador, ou dois geradores) chegando nos polos de um mesmo disjuntor ou DR comum.
+// Na transferência cada lado é verificado separado pelas entradas (lado I rua e lado II gerador é o certo).
+// Devolve uma fase de cada fonte encontrada, ou null.
+export function misturaDeFontes(p: Projeto, x: Peca, rede: Rede): FaseRede[] | null {
+  if (x.tipo !== 'disjuntor' && x.tipo !== 'dr') return null;
+  // Na transferência só as entradas contam: com um lado aberto, a saída dele recebe a outra fonte pelas saídas unidas (normal).
+  const lados = x.tipo === 'disjuntor' && x.transferencia ? [/^in:/, /^inII:/] : [/./];
+  for (const lado of lados) {
+    const porFonte = new Map<string, FaseRede>();
+    for (const b of bornesDaPeca(x, p)) {
+      if (!lado.test(b.id) || b.id.endsWith(':N')) continue;
+      for (const f of rede.potencial(x.id, b.id).fases) if (!porFonte.has(fonteDaFase(f))) porFonte.set(fonteDaFase(f), f);
+    }
+    if (porFonte.size > 1) return [...porFonte.values()];
+  }
+  return null;
+}
+
+// Perigos de ligação em cada carga (tomada, chuveiro...), olhando a instalação como está cabeada:
+// - semDisjuntor: a fase chega na carga vinda da rua ou do gerador sem passar por nenhum disjuntor
+//   (curto ou sobrecarga ali não derrubam nada: o fio esquenta até derreter);
+// - mistura: rua e gerador chegam na mesma carga (em qualquer borne).
+export interface PerigoCarga {
+  semDisjuntor: string[]; // fontes que chegam sem disjuntor ("rua", nome do gerador)
+  mistura: FaseRede[] | null; // uma fase de cada fonte que se encontram nela
+}
+
+export function perigosDasCargas(p: Projeto): Record<string, PerigoCarga> {
+  const cargas = p.pecas.filter((x): x is PecaCarga => x.tipo === 'carga');
+  if (!cargas.length) return {};
+  const nomeFonte = (f: FaseRede) => (ehFaseGerador(f) ? `gerador "${p.pecas.find((g) => g.id === fonteDaFase(f))?.nome ?? '?'}"` : 'rua');
+  // Disjuntores todos abertos (DR e medidor passam, mas não protegem contra curto/sobrecarga); geradores como se funcionassem.
+  const semProtecao = montarRede(p, { fechado: (x) => x.tipo === 'dr' || x.tipo === 'gerador', faltando: [] });
+  // Tudo ligado e geradores funcionando (na transferência vale o lado I).
+  const tudo = montarRede(p, { fechado: (x) => x.tipo === 'disjuntor' || x.tipo === 'dr' || x.tipo === 'gerador', faltando: [] });
+  const r: Record<string, PerigoCarga> = {};
+  for (const c of cargas) {
+    const bornes = bornesDaPeca(c, p);
+    const direto = new Set<string>();
+    for (const b of bornes) if (b.id !== 'T' && b.id !== 'N') for (const f of semProtecao.potencial(c.id, b.id).fases) direto.add(nomeFonte(f));
+    const porFonte = new Map<string, FaseRede>();
+    for (const b of bornes) for (const f of tudo.potencial(c.id, b.id).fases) if (!porFonte.has(fonteDaFase(f))) porFonte.set(fonteDaFase(f), f);
+    r[c.id] = { semDisjuntor: [...direto], mistura: porFonte.size > 1 ? [...porFonte.values()] : null };
+  }
+  return r;
+}
+
+// Riscos de ligação entre rua e gerador que aparecem quando o gerador funcionar (mesmo que agora esteja parado):
+// pontos em paralelo e disjuntores comuns com as duas fontes. Usado pra avisar na hora de ligar o cabo.
+export function riscosRuaGerador(p: Projeto): string[] {
+  if (!p.pecas.some((x) => x.tipo === 'gerador')) return [];
+  const sim = simular(p, [], (x) => x.tipo === 'disjuntor' || x.tipo === 'dr' || x.tipo === 'gerador');
+  const r = sim.curtos.filter((c) => c.paralelo).map((c) => `paralelo: ${c.desc}`);
+  for (const x of p.pecas) {
+    const fs = misturaDeFontes(p, x, sim.rede);
+    if (fs) r.push(`"${x.nome}" recebe ${fs.map(descreverFase).join(' e ')}`);
+  }
+  for (const [id, k] of Object.entries(perigosDasCargas(p))) {
+    if (k.mistura) r.push(`rua e gerador na mesma carga "${p.pecas.find((x) => x.id === id)?.nome}"`);
+  }
+  return r;
+}
+
 // Desarma a peça. Na transferência, desarma os lados que estavam ligados.
 const desarmar = (p: Projeto, id: string): Projeto => ({
   ...p,
@@ -202,7 +319,7 @@ const desarmar = (p: Projeto, id: string): Projeto => ({
         ...(x.II?.ligado ? { II: { ligado: false, desarmado: true } } : {}),
       };
     }
-    return x.tipo === 'disjuntor' || x.tipo === 'dr' ? { ...x, ligado: false, desarmado: true } : x;
+    return x.tipo === 'disjuntor' || x.tipo === 'dr' || x.tipo === 'gerador' ? { ...x, ligado: false, desarmado: true } : x;
   }),
 });
 
@@ -250,16 +367,41 @@ export function aplicarProtecoes(entrada: Projeto): ResultadoProtecoes {
     const ordem = [...disj.filter((x) => !x.geral), ...disj.filter((x) => x.geral)];
 
     // 1) Curto-circuito: cai o primeiro disjuntor (circuito antes do geral) encostado no ponto em curto.
+    //    Sem disjuntor no caminho, cai o disjuntor do próprio gerador (se ele estiver alimentando o curto).
     if (sim.curtos.length) {
-      const curto = sim.curtos[0];
-      const alvo = ordem.find((x) => bornesDaPeca(x, p).some((b) => sim.rede.grupo(x.id, b.id) === curto.grupo));
+      const curto = sim.curtos.find((c) => c.paralelo) ?? sim.curtos[0];
+      const geradores = p.pecas.filter((x): x is PecaGerador => x.tipo === 'gerador' && x.ligado);
+      const encostados = [...ordem, ...geradores].filter((x) => bornesDaPeca(x, p).some((b) => sim.rede.grupo(x.id, b.id) === curto.grupo));
+      // Paralelo: a corrente corre de uma fonte pra outra. Cai quem está NO CAMINHO entre elas
+      // (abrir ele separa rua e gerador), não um disjuntor que só encosta no ponto.
+      const nParalelos = (q: Projeto) => simular(q).curtos.filter((c) => c.paralelo).length;
+      const alvo = curto.paralelo
+        ? (encostados.find((x) => nParalelos(desarmar(p, x.id)) < nParalelos(p)) ?? encostados[0])
+        : encostados[0];
       if (alvo) {
-        eventos.push({ msg: `Curto (${curto.desc}): "${alvo.nome}" desarmou.`, peca: alvo.id });
+        eventos.push({
+          msg: curto.paralelo
+            ? `Rua e gerador ligados juntos (paralelo fora de sincronismo: ${curto.desc}). "${alvo.nome}" desarmou. ${RISCOS_PARALELO} Use disjuntor de transferência com intertravamento (rua no lado I, gerador no II).`
+            : `Curto (${curto.desc}): "${alvo.nome}" desarmou.`,
+          peca: alvo.id,
+        });
         p = desarmar(p, alvo.id);
         continue;
       }
       eventos.push({ msg: `Curto (${curto.desc}) sem disjuntor no caminho! Na vida real isso queima cabos ou o padrão.`, curto: true });
       break;
+    }
+
+    // 1b) Rua e gerador entrando no mesmo disjuntor/DR comum (um polo de cada fonte): desarma na hora.
+    const misturado = p.pecas.find((x) => estaFechado(x) && misturaDeFontes(p, x, sim.rede));
+    if (misturado) {
+      const fs = misturaDeFontes(p, misturado, sim.rede)!;
+      eventos.push({
+        msg: `"${misturado.nome}" desarmou: está recebendo ${fs.map(descreverFase).join(' e ')} ao mesmo tempo. ${RISCOS_PARALELO} Rua e gerador nunca entram no mesmo disjuntor comum: use um disjuntor de transferência (rua no lado I, gerador no II).`,
+        peca: misturado.id,
+      });
+      p = desarmar(p, misturado.id);
+      continue;
     }
 
     // 2) Sobrecarga: circuitos primeiro, geral por último.
@@ -268,6 +410,18 @@ export function aplicarProtecoes(entrada: Projeto): ResultadoProtecoes {
       const i = sim.dispositivos[sobrecarga.id].corrente;
       eventos.push({ msg: `"${sobrecarga.nome}" desarmou: ${i.toFixed(1)} A passando num disjuntor de ${sobrecarga.corrente} A.`, peca: sobrecarga.id });
       p = desarmar(p, sobrecarga.id);
+      continue;
+    }
+
+    // 2b) Gerador pedindo mais do que aguenta: o disjuntor dele desarma.
+    const gerSobre = p.pecas.find((x): x is PecaGerador => x.tipo === 'gerador' && x.ligado && (sim.geradores[x.id]?.carga ?? 0) > 1.001);
+    if (gerSobre) {
+      const e = sim.geradores[gerSobre.id];
+      eventos.push({
+        msg: `"${gerSobre.nome}" desarmou: sobrecarga (${(e.potencia / 1000).toFixed(1).replace('.', ',')} kW de cargas num gerador de ${(gerSobre.potencia / 1000).toFixed(1).replace('.', ',')} kVA${e.potencia <= gerSobre.potencia ? ', fase mais carregada passou do limite' : ''}). Desligue cargas antes de religar.`,
+        peca: gerSobre.id,
+      });
+      p = desarmar(p, gerSobre.id);
       continue;
     }
 
@@ -339,13 +493,16 @@ export function correntesDosCabos(p: Projeto, sim: Simulacao, fechado: (x: Peca)
           for (const b of pontas) if (sem.potencial(c.id, b).fases.size === 0) corrente += sim.cargas[c.id].corrente;
         }
       } else {
-        const porFase: Record<Fase, number> = { A: 0, B: 0, C: 0 };
+        // Soma vetorial por fonte (rua e cada gerador têm suas próprias fases defasadas 120°).
+        const porFonte = new Map<string, Record<Fase, number>>();
         for (const c of cargas) {
           if (cargaFaseFase(c, p) || sem.potencial(c.id, 'N').neutro) continue;
           const e = sim.cargas[c.id];
-          porFase[e.fases[0]] += e.corrente;
+          const fonte = fonteDaFase(e.fases[0]);
+          if (!porFonte.has(fonte)) porFonte.set(fonte, { A: 0, B: 0, C: 0 });
+          porFonte.get(fonte)!['ABC'[indiceFase(e.fases[0])] as Fase] += e.corrente;
         }
-        corrente = correnteNeutro(porFase);
+        for (const i of porFonte.values()) corrente += correnteNeutro(i);
       }
     }
     const capacidade = capacidadeFio(cabo.bitola);

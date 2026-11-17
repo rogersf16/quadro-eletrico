@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { CargaCabo, Simulacao } from '../../core/simulacao';
+import type { CargaCabo, PerigoCarga, Simulacao } from '../../core/simulacao';
 import type { Condutor, Projeto } from '../../core/types';
 import type { Nivel } from '../../core/validacao';
 import type { Acoes } from '../useProjeto';
@@ -15,6 +15,8 @@ export interface MapaCtxValor {
   sim: Simulacao;
   cargaCabos: Record<string, CargaCabo>; // corrente x capacidade de cada cabo, agora
   niveis: Record<string, Nivel>;
+  // Cargas ligadas sem disjuntor ou com rua e gerador juntos: faixa vermelha em cima delas.
+  perigos: Record<string, PerigoCarga>;
   acoes: Acoes;
   selecionar: (s: Selecao | null) => void;
   // "Seguir o fio": cabos em destaque (o resto fica apagado). null = nenhum foco, tudo normal.

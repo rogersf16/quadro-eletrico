@@ -1,9 +1,9 @@
 // Editores das peças mais simples: DR, carga, emenda, barramento e entrada.
 import type { ReactNode } from 'react';
-import { CORRENTES_DR, CORRENTES_MEDIDOR, TIPOS_CARGA, fornecimentoInfo, tipoCargaInfo } from '../../core/catalogo';
+import { CORRENTES_DR, CORRENTES_MEDIDOR, FORNECIMENTOS, POTENCIAS_GERADOR, TIPOS_CARGA, fornecimentoInfo, tipoCargaInfo } from '../../core/catalogo';
 import { simular, simularPiorCaso } from '../../core/simulacao';
-import type { Peca, PecaBarramento, PecaCarga, PecaDR, PecaEmenda, PecaEntrada, PecaMedidor, PecaQuadro, OrientacaoBarramento, Projeto, TipoCarga } from '../../core/types';
-import { drsQueProtegem, piorNivel, validarCarga } from '../../core/validacao';
+import type { Fornecimento, Peca, PecaBarramento, PecaCarga, PecaDR, PecaEmenda, PecaEntrada, PecaGerador, PecaMedidor, PecaQuadro, OrientacaoBarramento, Projeto, TipoCarga } from '../../core/types';
+import { drsQueProtegem, piorNivel, validarCarga, validarGeradores } from '../../core/validacao';
 import { Campo, Selo } from '../components/Campo';
 import type { Selecao } from '../mapa/contexto';
 import type { Acoes } from '../useProjeto';
@@ -278,6 +278,71 @@ export function EditorBarramento(props: Props<PecaBarramento>) {
         </Campo>
       </div>
       <Rodape {...props} rotulo="Remover barramento" />
+    </section>
+  );
+}
+
+export function EditorGerador(props: Props<PecaGerador>) {
+  const { peca: g, projeto: p, acoes, onSelecionar } = props;
+  const mudar = (m: Partial<PecaGerador>) => acoes.atualizarPeca(g.id, m);
+  const e = simular(p).geradores[g.id];
+  const alertas = validarGeradores(p).filter((a) => a.pecas?.includes(g.id));
+  const fmt = (n: number) => n.toFixed(1).replace('.', ',');
+  const estado = g.desarmado ? 'Desarmou (sobrecarga ou curto). Desligue cargas e dê partida de novo.' : g.ligado ? 'Funcionando' : 'Parado';
+  return (
+    <section className="painel editor">
+      <Topo titulo={g.nome} extra={<Selo nivel={piorNivel(alertas)} />} onFechar={() => onSelecionar(null)} />
+      <p className={`estado-carga ${g.ligado ? 'vivo' : ''}`}>{estado}</p>
+      <p className="campo-dica">
+        Segunda fonte de energia. As fases do gerador (<b>G1, G2, G3</b>) <b>não são sincronizadas</b> com as da rua: se as duas
+        fontes se encontram no mesmo cabo é curto. Ligue L1/L2/L3 no <b>lado II</b> de um disjuntor de transferência e a rua
+        no lado I. O neutro pode ser comum (barramento N).
+      </p>
+      <Campo rotulo="Nome">
+        <input value={g.nome} onChange={(ev) => mudar({ nome: ev.target.value })} />
+      </Campo>
+      <div className="grade">
+        <Campo rotulo="Ligação">
+          <select value={g.ligacao} onChange={(ev) => mudar({ ligacao: ev.target.value as Fornecimento })}>
+            {FORNECIMENTOS.map((f) => (
+              <option key={f.valor} value={f.valor}>{f.desc}</option>
+            ))}
+          </select>
+        </Campo>
+        <Campo rotulo="Potência" dica="Use a potência contínua (nominal), não a de pico da etiqueta.">
+          <select value={g.potencia} onChange={(ev) => mudar({ potencia: Number(ev.target.value) })}>
+            {[...new Set([...POTENCIAS_GERADOR, g.potencia])].sort((a, b) => a - b).map((x) => (
+              <option key={x} value={x}>{fmt(x / 1000)} kVA</option>
+            ))}
+          </select>
+        </Campo>
+      </div>
+      <div className="acoes">
+        <button onClick={() => acoes.alternar(g.id)}>{g.ligado ? 'Desligar gerador' : g.desarmado ? 'Rearmar e dar partida' : 'Dar partida'}</button>
+      </div>
+      {e && g.ligado && (
+        <table className="tabela-medidor">
+          <thead>
+            <tr><th>Fase</th><th>Tensão</th><th>Corrente</th></tr>
+          </thead>
+          <tbody>
+            {e.correntes.map((i, k) => (
+              <tr key={k}>
+                <td>G{k + 1}</td>
+                <td>{fornecimentoInfo(g.ligacao).faseNeutro} V</td>
+                <td>{fmt(i)} / {fmt(e.correnteNominal)} A</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {e && g.ligado && <p className="campo-dica">Entregando {fmt(e.potencia / 1000)} kW ({Math.round(e.carga * 100)}% da capacidade).</p>}
+      <ul className="alertas">
+        {alertas.map((a, i) => (
+          <li key={i} className={`alerta alerta-${a.nivel}`}>{a.msg}</li>
+        ))}
+      </ul>
+      <Rodape {...props} rotulo="Remover gerador" />
     </section>
   );
 }
